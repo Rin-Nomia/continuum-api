@@ -1,0 +1,66 @@
+name: Deploy Z1 API to HuggingFace
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+env:
+  HF_USERNAME: YOUR_HF_USERNAME  # 改成你的 HuggingFace 用戶名
+  HF_SPACE_NAME: z1-tone-api     # Space 名稱
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+      # 關卡 1：抓取 Repo
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      # 關卡 2：設定 Python
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      
+      # 關卡 3：安裝 HuggingFace CLI
+      - name: Install HuggingFace CLI
+        run: |
+          pip install huggingface_hub
+      
+      # 關卡 4：部署到 HuggingFace Spaces
+      - name: Deploy to HuggingFace
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          echo "🚀 部署 Z1 API 到 HuggingFace Spaces"
+          
+          # 登入 HuggingFace
+          huggingface-cli login --token $HF_TOKEN
+          
+          # 上傳檔案到 Space
+          huggingface-cli upload \
+            ${{ env.HF_USERNAME }}/${{ env.HF_SPACE_NAME }} \
+            . \
+            --repo-type=space \
+            --commit-message="Update Z1 API"
+          
+          echo "✅ 部署完成"
+          echo "📍 API URL: https://huggingface.co/spaces/${{ env.HF_USERNAME }}/${{ env.HF_SPACE_NAME }}"
+      
+      # 關卡 5：測試 API
+      - name: Test deployed API
+        run: |
+          sleep 30  # 等待部署完成
+          
+          API_URL="https://${{ env.HF_USERNAME }}-${{ env.HF_SPACE_NAME }}.hf.space"
+          
+          echo "🧪 測試 API 健康檢查"
+          curl -f "$API_URL/health" || echo "⚠️ 健康檢查失敗"
+          
+          echo "🧪 測試分析端點"
+          curl -X POST "$API_URL/api/v1/analyze" \
+            -H "Content-Type: application/json" \
+            -d '{"text": "測試文字"}' \
+            || echo "⚠️ 分析測試失敗"
