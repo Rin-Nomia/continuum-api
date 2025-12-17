@@ -1,18 +1,5 @@
-# z1-api
 # Z1 Tone Firewall API
 
-AI-powered tone detection and repair system.
+自動從 z1_mvp 同步並部署
 
-## 🚀 Quick Start
-
-### Local Testing
-
-```bash
-# 安裝依賴
-pip install -r requirements.txt
-
-# 設定環境變數
-export ANTHROPIC_API_KEY="your_key_here"
-
-# 啟動 API
-python app.py
+## 架構
