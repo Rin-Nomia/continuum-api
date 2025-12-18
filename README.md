@@ -40,6 +40,6 @@ curl https://RinNomia-z1-tone-api.hf.space/health
 	∙	Single analysis: ~1-2 seconds
 	∙	Confidence threshold: 0.2 for LLM repair
 	∙	Rate limit: 50 req/min
-    
+    ---
     Built with ❤️ by Rin | Powered by Claude 4
     
