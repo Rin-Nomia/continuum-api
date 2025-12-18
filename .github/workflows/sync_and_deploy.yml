@@ -29,7 +29,7 @@ jobs:
           token: ${{ secrets.GH_PAT }}
           path: z1_mvp
       
-      # 關卡 3：複製資料夾（自動化！）
+      # 關卡 3：複製資料夾
       - name: 關卡 3 - 複製 pipeline, core, configs
         run: |
           echo "📦 開始複製資料夾..."
@@ -54,7 +54,7 @@ jobs:
           python-version: "3.11"
       
       # 關卡 5：測試 Pipeline
-      - name: 關卡 5 - 測試 Pipeline 是否正常
+      - name: 關卡 5 - 測試 Pipeline
         working-directory: z1-api
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -63,43 +63,32 @@ jobs:
           pip install -r requirements.txt
           
           echo ""
-          echo "🧪 開始測試 Pipeline"
+          echo "🧪 測試 Pipeline"
           echo "================================"
           
           python << 'PYTEST'
           from pipeline.z1_pipeline import Z1Pipeline
-          import json
           
           print("初始化 Pipeline...")
           pipeline = Z1Pipeline(debug=True)
           print("✅ Pipeline 初始化成功")
           print()
           
-          # 測試：正常長度文字
-          print("🧪 測試：正常長度文字")
-          print("-" * 50)
-          test_text = "I don't know what to do anymore. Everything I try fails. Can someone please help me?"
-          print(f"測試文字：{test_text}")
-          print()
-          
+          print("🧪 測試分析功能")
+          test_text = "I don't know what to do anymore. Everything I try fails."
           result = pipeline.process(test_text)
           
           if result.get('error'):
-              print(f"❌ Pipeline 測試失敗")
-              print(f"   錯誤原因：{result.get('reason')}")
+              print(f"❌ 測試失敗：{result.get('reason')}")
               exit(1)
-          else:
-              print(f"✅ Pipeline 測試成功！")
-              print()
-              print(f"📊 分析結果：")
-              print(f"   類型：{result['freq_type']}")
-              print(f"   信心值：{result['confidence']['final']:.2f}")
-              print(f"   場景：{result['output']['scenario']}")
-              print()
-              print(f"🎉 測試通過！API 可以正常運作")
+          
+          print(f"✅ 測試成功！")
+          print(f"   類型：{result['freq_type']}")
+          print(f"   信心值：{result['confidence']['final']:.2f}")
+          print(f"   場景：{result['output']['scenario']}")
           PYTEST
       
-      # 關卡 6：部署到 HuggingFace（修正版）
+      # 關卡 6：部署到 HuggingFace（Python API 版本）
       - name: 關卡 6 - 部署到 HuggingFace
         working-directory: z1-api
         env:
@@ -109,29 +98,73 @@ jobs:
           pip install huggingface_hub
           
           echo ""
-          echo "🔐 登入 HuggingFace..."
-          python -m huggingface_hub.commands.huggingface_cli login --token $HF_TOKEN
+          echo "📤 開始部署到 HuggingFace Space..."
+          echo "================================"
           
-          echo ""
-          echo "📤 上傳到 HuggingFace Space..."
-          python -m huggingface_hub.commands.huggingface_cli upload \
-            ${{ env.HF_USERNAME }}/${{ env.HF_SPACE }} \
-            . \
-            --repo-type=space \
-            --commit-message="Auto deploy Z1 API [$(date +'%Y-%m-%d %H:%M:%S')]"
+          python << 'PYDEPLOY'
+          import os
+          from huggingface_hub import HfApi
+          from datetime import datetime
           
-          echo ""
-          echo "================================"
-          echo "✅ 部署完成！"
-          echo "================================"
-          echo ""
-          echo "📍 API 端點："
-          echo "   健康檢查：https://${{ env.HF_USERNAME }}-${{ env.HF_SPACE }}.hf.space/health"
-          echo "   API 文件：https://${{ env.HF_USERNAME }}-${{ env.HF_SPACE }}.hf.space/docs"
-          echo "   分析端點：https://${{ env.HF_USERNAME }}-${{ env.HF_SPACE }}.hf.space/api/v1/analyze"
-          echo ""
-          echo "🧪 測試指令："
-          echo "   curl https://${{ env.HF_USERNAME }}-${{ env.HF_SPACE }}.hf.space/health"
-          echo ""
-          echo "⏳ 注意：HuggingFace Space 需要 2-5 分鐘啟動"
-          echo "================================"
+          # 取得環境變數
+          token = os.environ['HF_TOKEN']
+          username = os.environ['HF_USERNAME']
+          space_name = os.environ['HF_SPACE']
+          repo_id = f"{username}/{space_name}"
+          
+          print(f"📍 目標 Space：{repo_id}")
+          print()
+          
+          # 初始化 API
+          api = HfApi(token=token)
+          
+          # 檢查 Space 是否存在
+          try:
+              api.space_info(repo_id)
+              print(f"✅ Space 已存在：{repo_id}")
+          except Exception as e:
+              print(f"⚠️  Space 不存在，將自動建立")
+              try:
+                  api.create_repo(
+                      repo_id=repo_id,
+                      repo_type="space",
+                      space_sdk="docker"
+                  )
+                  print(f"✅ Space 建立成功：{repo_id}")
+              except Exception as create_error:
+                  print(f"❌ 無法建立 Space：{create_error}")
+                  exit(1)
+          
+          print()
+          print("📤 上傳檔案中...")
+          
+          # 上傳資料夾
+          try:
+              api.upload_folder(
+                  folder_path=".",
+                  repo_id=repo_id,
+                  repo_type="space",
+                  commit_message=f"Auto deploy Z1 API [{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}]"
+              )
+              print("✅ 上傳成功！")
+          except Exception as e:
+              print(f"❌ 上傳失敗：{e}")
+              exit(1)
+          
+          print()
+          print("================================")
+          print("🎉 部署完成！")
+          print("================================")
+          print()
+          print("📍 API 端點：")
+          print(f"   健康檢查：https://{username}-{space_name}.hf.space/health")
+          print(f"   API 文件：https://{username}-{space_name}.hf.space/docs")
+          print(f"   分析端點：https://{username}-{space_name}.hf.space/api/v1/analyze")
+          print()
+          print("🧪 測試指令：")
+          print(f"   curl https://{username}-{space_name}.hf.space/health")
+          print()
+          print("⏳ 注意：HuggingFace Space 需要 2-5 分鐘啟動")
+          print("   請稍後訪問上面的 URL")
+          print("================================")
+          PYDEPLOY
