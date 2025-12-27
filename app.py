@@ -1,18 +1,25 @@
-"""Z1 API - 自動從 z1_mvp 同步"""
-from fastapi import FastAPI, HTTPException
+"""Z1 API - 自動從 z1_mvp 同步 + GitHub 資料備份"""
+from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from typing import Optional
 import logging
 import os
+from datetime import datetime
+import asyncio
 
 # 這些會被 GitHub Actions 自動複製過來
 from pipeline.z1_pipeline import Z1Pipeline
+from logger import DataLogger, GitHubBackup
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="Z1 Tone Firewall API", version="1.0.0")
+app = FastAPI(
+    title="Z1 Tone Firewall API",
+    version="1.0.0",
+    description="AI-powered tone detection and repair"
+)
 
 app.add_middleware(
     CORSMiddleware,
@@ -22,13 +29,19 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# 初始化
 try:
     pipeline = Z1Pipeline(config_path='configs/settings.yaml', debug=False)
-    logger.info("✅ Pipeline ready")
+    data_logger = DataLogger()
+    gh_backup = GitHubBackup()
+    logger.info("✅ Pipeline & Logger & Backup ready")
 except Exception as e:
-    logger.error(f"❌ Pipeline failed: {e}")
+    logger.error(f"❌ Init failed: {e}")
     pipeline = None
+    data_logger = None
+    gh_backup = None
 
+# ===== 資料模型 =====
 class AnalyzeRequest(BaseModel):
     text: str = Field(..., min_length=1, max_length=5000)
 
@@ -38,35 +51,150 @@ class AnalyzeResponse(BaseModel):
     confidence: float
     scenario: str
     repaired_text: Optional[str] = None
+    log_id: Optional[str] = None
 
+class FeedbackRequest(BaseModel):
+    log_id: str
+    accuracy: int = Field(..., ge=1, le=5)
+    helpful: int = Field(..., ge=1, le=5)
+    accepted: bool
+
+# ===== 背景任務：定期備份 =====
+async def periodic_backup():
+    """每小時備份一次到 GitHub"""
+    while True:
+        try:
+            await asyncio.sleep(3600)  # 1 小時
+            if gh_backup:
+                gh_backup.backup()
+                logger.info("✅ Logs backed up to GitHub")
+        except Exception as e:
+            logger.error(f"⚠️ Backup failed: {e}")
+
+@app.on_event("startup")
+async def startup_event():
+    """啟動時恢復之前的 logs"""
+    if gh_backup:
+        try:
+            gh_backup.restore()
+            logger.info("✅ Previous logs restored")
+        except:
+            logger.info("ℹ️ No previous logs, starting fresh")
+    
+    # 啟動備份任務
+    asyncio.create_task(periodic_backup())
+
+# ===== API 端點 =====
 @app.get("/")
 async def root():
-    return {"message": "Z1 API", "version": "1.0.0", "docs": "/docs"}
+    return {
+        "message": "Z1 Tone Firewall API",
+        "version": "1.0.0",
+        "model": "claude-haiku-4-5-20251001",
+        "docs": "/docs"
+    }
 
 @app.get("/health")
 async def health():
-    return {"status": "healthy" if pipeline else "unhealthy"}
+    return {
+        "status": "healthy" if pipeline else "unhealthy",
+        "pipeline": pipeline is not None,
+        "logger": data_logger is not None
+    }
 
 @app.post("/api/v1/analyze", response_model=AnalyzeResponse)
 async def analyze(request: AnalyzeRequest):
+    """分析語氣"""
     if not pipeline:
         raise HTTPException(503, "Pipeline not ready")
+    
     try:
+        # 執行分析
         result = pipeline.process(request.text)
+        
         if result.get("error"):
             raise HTTPException(400, result.get("reason"))
+        
+        # 記錄數據
+        log_id = None
+        if data_logger:
+            try:
+                log_entry = data_logger.log(
+                    input_text=request.text,
+                    output_result=result,
+                    metadata={
+                        'model': 'claude-haiku-4-5-20251001',
+                        'api_version': 'v1',
+                        'truncated': result.get('truncated', False)
+                    }
+                )
+                log_id = log_entry.get('timestamp')
+            except Exception as e:
+                logger.error(f"⚠️ Log failed: {e}")
+        
+        # 回傳
         return AnalyzeResponse(
             original=result["original"],
             freq_type=result["freq_type"],
             confidence=result["confidence"]["final"],
             scenario=result["output"]["scenario"],
-            repaired_text=result["output"].get("repaired_text")
+            repaired_text=result["output"].get("repaired_text"),
+            log_id=log_id
         )
+        
     except HTTPException:
         raise
     except Exception as e:
+        logger.error(f"❌ Analysis error: {e}")
+        raise HTTPException(500, str(e))
+
+@app.post("/api/v1/feedback")
+async def submit_feedback(feedback: FeedbackRequest):
+    """接收用戶反饋"""
+    if not data_logger:
+        raise HTTPException(503, "Logger not ready")
+    
+    try:
+        data_logger.log_feedback(
+            log_id=feedback.log_id,
+            accuracy=feedback.accuracy,
+            helpful=feedback.helpful,
+            accepted=feedback.accepted
+        )
+        return {"status": "ok"}
+    except Exception as e:
+        logger.error(f"❌ Feedback error: {e}")
+        raise HTTPException(500, str(e))
+
+@app.get("/api/v1/stats")
+async def get_stats():
+    """取得統計"""
+    if not data_logger:
+        raise HTTPException(503, "Logger not ready")
+    
+    try:
+        return data_logger.get_stats()
+    except Exception as e:
+        logger.error(f"❌ Stats error: {e}")
+        raise HTTPException(500, str(e))
+
+@app.post("/api/v1/backup")
+async def manual_backup():
+    """手動觸發備份"""
+    if not gh_backup:
+        raise HTTPException(503, "Backup not ready")
+    
+    try:
+        gh_backup.backup()
+        return {"status": "ok", "message": "Backup completed"}
+    except Exception as e:
+        logger.error(f"❌ Manual backup failed: {e}")
         raise HTTPException(500, str(e))
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get("PORT", 7860)))
+    uvicorn.run(
+        app,
+        host="0.0.0.0",
+        port=int(os.environ.get("PORT", 7860))
+    )
