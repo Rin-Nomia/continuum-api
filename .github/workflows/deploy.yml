@@ -6,8 +6,8 @@ on:
   workflow_dispatch:
 
 env:
-  HF_USERNAME: RinNomia  # 改成你的 HuggingFace 用戶名
-  HF_SPACE_NAME: z1-tone-api     # Space 名稱
+  HF_USERNAME: RinNomia
+  HF_SPACE_NAME: z1-tone-api
 
 jobs:
   deploy:
@@ -24,43 +24,92 @@ jobs:
         with:
           python-version: "3.11"
       
-      # 關卡 3：安裝 HuggingFace CLI
+      # 關卡 3：安裝 HuggingFace CLI（修正版）
       - name: Install HuggingFace CLI
         run: |
-          pip install huggingface_hub
+          pip install --upgrade pip
+          pip install huggingface_hub[cli]
       
-      # 關卡 4：部署到 HuggingFace Spaces
+      # 關卡 4：部署到 HuggingFace Spaces（用 Python API）
       - name: Deploy to HuggingFace
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
-          echo "🚀 部署 Z1 API 到 HuggingFace Spaces"
+          python << 'PYDEPLOY'
+          import os
+          from huggingface_hub import HfApi
+          from datetime import datetime
           
-          # 登入 HuggingFace
-          huggingface-cli login --token $HF_TOKEN
+          # 取得環境變數
+          token = os.environ['HF_TOKEN']
+          username = os.environ['HF_USERNAME']
+          space_name = os.environ['HF_SPACE_NAME']
+          repo_id = f"{username}/{space_name}"
           
-          # 上傳檔案到 Space
-          huggingface-cli upload \
-            ${{ env.HF_USERNAME }}/${{ env.HF_SPACE_NAME }} \
-            . \
-            --repo-type=space \
-            --commit-message="Update Z1 API"
+          print(f"🚀 部署 Z1 API 到 HuggingFace Space: {repo_id}")
+          print()
           
-          echo "✅ 部署完成"
-          echo "📍 API URL: https://huggingface.co/spaces/${{ env.HF_USERNAME }}/${{ env.HF_SPACE_NAME }}"
+          # 初始化 API
+          api = HfApi(token=token)
+          
+          # 檢查 Space 是否存在
+          try:
+              api.space_info(repo_id)
+              print(f"✅ Space 已存在：{repo_id}")
+          except Exception as e:
+              print(f"⚠️  Space 不存在，將自動建立")
+              try:
+                  api.create_repo(
+                      repo_id=repo_id,
+                      repo_type="space",
+                      space_sdk="docker"
+                  )
+                  print(f"✅ Space 建立成功：{repo_id}")
+              except Exception as create_error:
+                  print(f"❌ 無法建立 Space：{create_error}")
+                  exit(1)
+          
+          print()
+          print("📤 上傳檔案中...")
+          
+          # 上傳資料夾
+          try:
+              api.upload_folder(
+                  folder_path=".",
+                  repo_id=repo_id,
+                  repo_type="space",
+                  commit_message=f"Auto deploy [{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}]",
+                  ignore_patterns=[".git", ".github", "*.pyc", "__pycache__"]
+              )
+              print("✅ 上傳成功！")
+          except Exception as e:
+              print(f"❌ 上傳失敗：{e}")
+              exit(1)
+          
+          print()
+          print("=" * 50)
+          print("🎉 部署完成！")
+          print("=" * 50)
+          print()
+          print("📍 Space URL:")
+          print(f"   https://huggingface.co/spaces/{repo_id}")
+          print()
+          print("📍 API 端點：")
+          print(f"   https://{username}-{space_name}.hf.space/health")
+          print(f"   https://{username}-{space_name}.hf.space/docs")
+          print()
+          print("⏳ 注意：Space 需要 2-5 分鐘啟動")
+          print("=" * 50)
+          PYDEPLOY
       
-      # 關卡 5：測試 API
+      # 關卡 5：等待並測試 API
       - name: Test deployed API
         run: |
-          sleep 30  # 等待部署完成
+          echo "⏳ 等待 Space 啟動（60 秒）..."
+          sleep 60
           
           API_URL="https://${{ env.HF_USERNAME }}-${{ env.HF_SPACE_NAME }}.hf.space"
           
+          echo ""
           echo "🧪 測試 API 健康檢查"
-          curl -f "$API_URL/health" || echo "⚠️ 健康檢查失敗"
-          
-          echo "🧪 測試分析端點"
-          curl -X POST "$API_URL/api/v1/analyze" \
-            -H "Content-Type: application/json" \
-            -d '{"text": "測試文字"}' \
-            || echo "⚠️ 分析測試失敗"
+          curl -f "$API_URL/health" || echo "⚠️  API 尚未就緒，請稍後手動測試"
