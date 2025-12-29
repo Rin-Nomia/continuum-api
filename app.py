@@ -99,7 +99,8 @@ async def health():
     return {
         "status": "healthy" if pipeline else "unhealthy",
         "pipeline": pipeline is not None,
-        "logger": data_logger is not None
+        "logger": data_logger is not None,
+        "backup": gh_backup is not None
     }
 
 @app.post("/api/v1/analyze", response_model=AnalyzeResponse)
@@ -186,9 +187,89 @@ async def manual_backup():
     
     try:
         gh_backup.backup()
-        return {"status": "ok", "message": "Backup completed"}
+        
+        gh_repo = os.environ.get('GH_REPO', 'unknown')
+        
+        return {
+            "status": "ok",
+            "message": "Backup completed",
+            "verify_url": f"https://github.com/{gh_repo}"
+        }
     except Exception as e:
         logger.error(f"❌ Manual backup failed: {e}")
+        raise HTTPException(500, str(e))
+
+@app.post("/api/v1/test-backup")
+async def test_backup():
+    """測試 GitHub 備份功能（完整測試）"""
+    try:
+        # 建立測試數據
+        test_result = {
+            'original': 'Manual backup test from API',
+            'freq_type': 'Test',
+            'confidence': {'final': 0.99},
+            'output': {
+                'scenario': 'api_test',
+                'repaired_text': 'This is a test message',
+                'mode': 'test'
+            },
+            'rhythm': {
+                'total': 1,
+                'speed_index': 0.5,
+                'emotion_rate': 0.0
+            }
+        }
+        
+        # 記錄測試數據
+        if data_logger:
+            log_entry = data_logger.log(
+                input_text='Manual backup test from API',
+                output_result=test_result,
+                metadata={
+                    'test': True,
+                    'source': 'api_test_endpoint',
+                    'timestamp': datetime.now().isoformat()
+                }
+            )
+            logger.info(f"✅ Test data logged: {log_entry['timestamp']}")
+        else:
+            raise HTTPException(503, "Logger not ready")
+        
+        # 執行備份
+        if gh_backup:
+            gh_backup.backup()
+            logger.info("✅ Test backup completed")
+        else:
+            raise HTTPException(503, "Backup not configured")
+        
+        # 準備回應
+        gh_repo = os.environ.get('GH_REPO', 'unknown')
+        date_str = datetime.now().strftime('%Y-%m-%d')
+        
+        return {
+            "status": "success",
+            "message": "Backup test completed successfully",
+            "test_data_logged": True,
+            "backup_executed": True,
+            "verify_url": f"https://github.com/{gh_repo}",
+            "instructions": [
+                "1. Visit the URL above",
+                "2. Check for latest commit (should be within last minute)",
+                f"3. Look for file: analysis_{date_str}.jsonl",
+                "4. Open the file and verify it contains test data",
+                "5. Search for 'api_test_endpoint' in the file"
+            ],
+            "expected_content": {
+                "source": "api_test_endpoint",
+                "text": "Manual backup test from API",
+                "freq_type": "Test"
+            }
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Test backup failed: {e}")
         raise HTTPException(500, str(e))
 
 if __name__ == "__main__":
