@@ -12,6 +12,7 @@ env:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 30  # 🔥 增加整體 job timeout
     
     steps:
       - name: Checkout repository
@@ -25,7 +26,7 @@ jobs:
       - name: Install dependencies
         run: |
           pip install --upgrade pip
-          pip install huggingface_hub[cli]
+          pip install "huggingface_hub>=0.20.0"
           pip install gitpython
       
       - name: Test GitHub Backup
@@ -132,6 +133,7 @@ jobs:
         run: |
           python << 'PYDEPLOY'
           import os
+          import time
           from huggingface_hub import HfApi
           from datetime import datetime
           
@@ -143,6 +145,7 @@ jobs:
           print(f"🚀 部署 Z1 API 到 HuggingFace Space: {repo_id}")
           print()
           
+          # 🔥 增加 timeout
           api = HfApi(token=token)
           
           try:
@@ -163,19 +166,49 @@ jobs:
           
           print()
           print("📤 上傳檔案中...")
+          print("⏳ 這可能需要 1-3 分鐘...")
           
-          try:
-              api.upload_folder(
-                  folder_path=".",
-                  repo_id=repo_id,
-                  repo_type="space",
-                  commit_message=f"Auto deploy [{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}]",
-                  ignore_patterns=[".git", ".github", "*.pyc", "__pycache__", "logs"]
-              )
-              print("✅ 上傳成功！")
-          except Exception as e:
-              print(f"❌ 上傳失敗：{e}")
-              exit(1)
+          # 🔥 重試機制
+          max_retries = 3
+          retry_delay = 10
+          
+          for attempt in range(max_retries):
+              try:
+                  print(f"   嘗試 {attempt + 1}/{max_retries}...")
+                  
+                  api.upload_folder(
+                      folder_path=".",
+                      repo_id=repo_id,
+                      repo_type="space",
+                      commit_message=f"Auto deploy [{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}]",
+                      ignore_patterns=[
+                          ".git",
+                          ".github",
+                          "*.pyc",
+                          "__pycache__",
+                          "logs",
+                          ".gitignore",
+                          "README.md"
+                      ],
+                      # 🔥 不要多線程上傳（避免 timeout）
+                      multi_commits=False,
+                      multi_commits_verbose=False
+                  )
+                  
+                  print("✅ 上傳成功！")
+                  break
+                  
+              except Exception as e:
+                  error_msg = str(e)
+                  print(f"⚠️  嘗試 {attempt + 1} 失敗：{error_msg}")
+                  
+                  if attempt < max_retries - 1:
+                      print(f"   {retry_delay} 秒後重試...")
+                      time.sleep(retry_delay)
+                      retry_delay *= 2  # 指數退避
+                  else:
+                      print(f"❌ 上傳失敗（已重試 {max_retries} 次）")
+                      exit(1)
           
           print()
           print("=" * 50)
