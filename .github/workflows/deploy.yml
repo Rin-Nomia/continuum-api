@@ -14,37 +14,31 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-      # 關卡 1：抓取 Repo
       - name: Checkout repository
         uses: actions/checkout@v4
       
-      # 關卡 2：設定 Python
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
       
-      # 關卡 3：安裝依賴
       - name: Install dependencies
         run: |
           pip install --upgrade pip
           pip install huggingface_hub[cli]
           pip install gitpython
       
-      # 關卡 3.5：測試 GitHub 備份功能
       - name: Test GitHub Backup
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
           GH_REPO: ${{ secrets.GH_REPO }}
         run: |
           echo "🧪 測試 GitHub 備份功能"
-          echo "=" * 60
           
-          # 設定 git
           git config --global user.name "Z1 API Test"
           git config --global user.email "test@z1api.dev"
+          git config --global init.defaultBranch main
           
-          # 執行測試腳本
           python << 'PYTEST'
           import os
           import json
@@ -71,10 +65,8 @@ jobs:
           print("📋 步驟 2: 建立測試數據")
           print("-" * 60)
           
-          # 建立 logs 資料夾
           os.makedirs('logs', exist_ok=True)
           
-          # 寫入測試數據
           test_data = {
               'timestamp': datetime.now().isoformat(),
               'input': {'text': 'GitHub backup test', 'length': 19},
@@ -96,12 +88,10 @@ jobs:
           
           os.chdir('logs')
           
-          # Git 初始化
-          subprocess.run(['git', 'init'], check=True)
+          subprocess.run(['git', 'init', '-b', 'main'], check=True)
           subprocess.run(['git', 'config', 'user.name', 'Z1 API Test'], check=True)
           subprocess.run(['git', 'config', 'user.email', 'test@z1api.dev'], check=True)
           
-          # 設定 remote
           remote_url = f'https://{gh_token}@github.com/{gh_repo}.git'
           subprocess.run(['git', 'remote', 'add', 'origin', remote_url], 
                         stderr=subprocess.DEVNULL)
@@ -136,7 +126,6 @@ jobs:
           print("=" * 60)
           PYTEST
       
-      # 關卡 4：部署到 HuggingFace Spaces
       - name: Deploy to HuggingFace
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
@@ -146,7 +135,6 @@ jobs:
           from huggingface_hub import HfApi
           from datetime import datetime
           
-          # 取得環境變數
           token = os.environ['HF_TOKEN']
           username = os.environ['HF_USERNAME']
           space_name = os.environ['HF_SPACE_NAME']
@@ -155,14 +143,12 @@ jobs:
           print(f"🚀 部署 Z1 API 到 HuggingFace Space: {repo_id}")
           print()
           
-          # 初始化 API
           api = HfApi(token=token)
           
-          # 檢查 Space 是否存在
           try:
               api.space_info(repo_id)
               print(f"✅ Space 已存在：{repo_id}")
-          except Exception as e:
+          except Exception:
               print(f"⚠️  Space 不存在，將自動建立")
               try:
                   api.create_repo(
@@ -171,14 +157,13 @@ jobs:
                       space_sdk="docker"
                   )
                   print(f"✅ Space 建立成功：{repo_id}")
-              except Exception as create_error:
-                  print(f"❌ 無法建立 Space：{create_error}")
+              except Exception as e:
+                  print(f"❌ 無法建立 Space：{e}")
                   exit(1)
           
           print()
           print("📤 上傳檔案中...")
           
-          # 上傳資料夾
           try:
               api.upload_folder(
                   folder_path=".",
@@ -208,7 +193,6 @@ jobs:
           print("=" * 50)
           PYDEPLOY
       
-      # 關卡 5：等待並測試 API
       - name: Test deployed API
         run: |
           echo "⏳ 等待 Space 啟動（60 秒）..."
@@ -219,7 +203,3 @@ jobs:
           echo ""
           echo "🧪 測試 API 健康檢查"
           curl -f "$API_URL/health" || echo "⚠️  API 尚未就緒，請稍後手動測試"
-          
-          echo ""
-          echo "🧪 測試備份端點"
-          curl -X POST -f "$API_URL/api/v1/test-backup" || echo "⚠️  測試端點尚未就緒"
