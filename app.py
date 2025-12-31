@@ -51,6 +51,7 @@ class AnalyzeResponse(BaseModel):
     confidence: float
     scenario: str
     repaired_text: Optional[str] = None
+    repair_note: Optional[str] = None  # 新增：說明為何無法修復
     log_id: Optional[str] = None
 
 class FeedbackRequest(BaseModel):
@@ -58,6 +59,27 @@ class FeedbackRequest(BaseModel):
     accuracy: int = Field(..., ge=1, le=5)
     helpful: int = Field(..., ge=1, le=5)
     accepted: bool
+
+# ===== 誠實回應函數 =====
+def generate_honest_response(text: str, freq_type: str, confidence: float) -> tuple[str, str]:
+    """
+    當無法確定語氣時，誠實告知並給建議
+    
+    Returns:
+        (repaired_text, repair_note)
+    """
+    # 保持原文不改
+    repaired = text
+    
+    # 根據不同情況給不同說明
+    if len(text) < 10:
+        note = "此訊息較短，語氣判斷信心度較低。建議：增加具體描述或情境說明，以利準確判斷語氣。"
+    elif confidence < 0.3:
+        note = f"系統對此語氣的判斷信心度為 {int(confidence*100)}%，建議人工確認是否需要調整表達方式。"
+    else:
+        note = "此訊息的語氣分類不明確，無法提供修復建議。原文已保留，請根據實際情境判斷是否需要調整。"
+    
+    return repaired, note
 
 # ===== 背景任務：定期備份 =====
 async def periodic_backup():
@@ -116,6 +138,21 @@ async def analyze(request: AnalyzeRequest):
         if result.get("error"):
             raise HTTPException(400, result.get("reason"))
         
+        # 取得基本結果
+        freq_type = result["freq_type"]
+        confidence = result["confidence"]["final"]
+        repaired_text = result["output"].get("repaired_text")
+        repair_note = None
+        
+        # 處理 Unknown 或低信心度的情況
+        if freq_type == "Unknown" or confidence < 0.3:
+            repaired_text, repair_note = generate_honest_response(
+                text=request.text,
+                freq_type=freq_type,
+                confidence=confidence
+            )
+            logger.info(f"ℹ️ Low confidence repair: {freq_type} @ {confidence:.2f}")
+        
         # 記錄數據
         log_id = None
         if data_logger:
@@ -126,7 +163,9 @@ async def analyze(request: AnalyzeRequest):
                     metadata={
                         'model': 'claude-haiku-4-5-20251001',
                         'api_version': 'v1',
-                        'truncated': result.get('truncated', False)
+                        'truncated': result.get('truncated', False),
+                        'low_confidence': confidence < 0.3,
+                        'repair_note': repair_note
                     }
                 )
                 log_id = log_entry.get('timestamp')
@@ -136,10 +175,11 @@ async def analyze(request: AnalyzeRequest):
         # 回傳
         return AnalyzeResponse(
             original=result["original"],
-            freq_type=result["freq_type"],
-            confidence=result["confidence"]["final"],
+            freq_type=freq_type,
+            confidence=confidence,
             scenario=result["output"]["scenario"],
-            repaired_text=result["output"].get("repaired_text"),
+            repaired_text=repaired_text,
+            repair_note=repair_note,
             log_id=log_id
         )
         
