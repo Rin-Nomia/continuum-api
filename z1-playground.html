@@ -38,6 +38,22 @@
         .tagline {
             color: #888;
             font-size: 0.9em;
+            margin-bottom: 8px;
+        }
+        
+        .notice {
+            background: #1a2332;
+            border: 1px solid #2d3e54;
+            border-radius: 6px;
+            padding: 12px;
+            color: #88b3ff;
+            font-size: 0.85em;
+            text-align: center;
+            margin-top: 12px;
+        }
+        
+        .notice strong {
+            color: #4a9eff;
         }
         
         .input-section {
@@ -46,6 +62,21 @@
             border-radius: 8px;
             padding: 20px;
             margin-bottom: 20px;
+        }
+        
+        .char-counter {
+            text-align: right;
+            color: #666;
+            font-size: 0.85em;
+            margin-top: 8px;
+        }
+        
+        .char-counter.warning {
+            color: #ff922b;
+        }
+        
+        .char-counter.good {
+            color: #51cf66;
         }
         
         textarea {
@@ -126,6 +157,16 @@
             font-size: 1.05em;
         }
         
+        .repair-note {
+            background: #1a2332;
+            border-left: 3px solid #4a9eff;
+            padding: 12px;
+            margin-top: 12px;
+            color: #88b3ff;
+            font-size: 0.9em;
+            border-radius: 4px;
+        }
+        
         .tone-badge {
             display: inline-block;
             padding: 4px 12px;
@@ -148,10 +189,16 @@
             font-size: 0.9em;
         }
         
-        .loading {
-            text-align: center;
-            padding: 20px;
-            color: #888;
+        .confidence.low {
+            color: #ff922b;
+        }
+        
+        .confidence.medium {
+            color: #ffd43b;
+        }
+        
+        .confidence.high {
+            color: #51cf66;
         }
         
         .error {
@@ -161,6 +208,7 @@
             padding: 12px;
             color: #ff6b6b;
             margin-top: 15px;
+            font-size: 0.9em;
         }
         
         footer {
@@ -182,19 +230,27 @@
     <div class="container">
         <header>
             <h1>💎 Z1 Tone Firewall</h1>
-            <p class="tagline">Detect and repair tone issues before they become communication failures</p>
+            <p class="tagline">Detect and repair tone issues in complete sentences</p>
+            <div class="notice">
+                <strong>💡 最佳使用建議：</strong>輸入完整句子（15 字以上）以獲得最準確的語氣分析
+            </div>
         </header>
         
         <div class="input-section">
             <textarea 
                 id="inputText" 
-                placeholder="輸入你想分析的文字... 
-                
-例如：
-• 你到底要不要做決定？
-• 我不知道欸，你覺得呢
-• 這個不行，換別的"
+                placeholder="輸入完整句子以獲得最佳分析結果...
+
+建議範例：
+- 我覺得這個方案可能需要再討論一下，你怎麼看？
+- 這個期限實在太趕了，我們能不能延後幾天？
+- 我不太確定這樣做是否合適，需要你的意見
+
+避免使用：
+✗ 你到底想怎樣（太短，語氣不明確）
+✗ 不知道欸（缺乏完整表達）"
             ></textarea>
+            <div id="charCounter" class="char-counter">0 字</div>
             <button id="analyzeBtn" onclick="analyzeText()">分析語氣</button>
             <div id="errorMsg" class="error" style="display:none;"></div>
         </div>
@@ -213,6 +269,7 @@
             <div class="result-item">
                 <div class="result-label">修復後文字</div>
                 <div class="result-value" id="repairedText"></div>
+                <div id="repairNote" class="repair-note" style="display:none;"></div>
             </div>
             
             <div class="result-item">
@@ -223,12 +280,30 @@
         
         <footer>
             <p>API: <a href="https://rinnomia-z1-tone-api.hf.space/docs" target="_blank">rinnomia-z1-tone-api.hf.space</a></p>
-            <p>95% accuracy • 5 tone types • 8-stage pipeline</p>
+            <p>95% accuracy on complete sentences • 5 tone types • 8-stage pipeline</p>
         </footer>
     </div>
 
     <script>
         const API_URL = 'https://rinnomia-z1-tone-api.hf.space/api/v1/analyze';
+        
+        // 字數計數器
+        const inputText = document.getElementById('inputText');
+        const charCounter = document.getElementById('charCounter');
+        
+        inputText.addEventListener('input', function() {
+            const count = this.value.trim().length;
+            charCounter.textContent = `${count} 字`;
+            
+            // 根據長度改變顏色
+            if (count < 10) {
+                charCounter.className = 'char-counter warning';
+            } else if (count >= 15) {
+                charCounter.className = 'char-counter good';
+            } else {
+                charCounter.className = 'char-counter';
+            }
+        });
         
         async function analyzeText() {
             const inputText = document.getElementById('inputText').value.trim();
@@ -243,6 +318,12 @@
             if (!inputText) {
                 showError('請輸入要分析的文字');
                 return;
+            }
+            
+            // 長度警告（不阻擋，只提醒）
+            if (inputText.length < 10) {
+                showError('提醒：文字較短可能影響判斷準確度，建議輸入完整句子（15 字以上）');
+                // 繼續執行，不 return
             }
             
             // 顯示載入狀態
@@ -278,6 +359,7 @@
             const toneTypeEl = document.getElementById('toneType');
             const originalTextEl = document.getElementById('originalText');
             const repairedTextEl = document.getElementById('repairedText');
+            const repairNoteEl = document.getElementById('repairNote');
             const scenarioEl = document.getElementById('scenario');
             const resultSection = document.getElementById('resultSection');
             
@@ -285,15 +367,33 @@
             const toneClass = `tone-${data.freq_type.toLowerCase()}`;
             const confidencePercent = (data.confidence * 100).toFixed(0);
             
+            // 信心度顏色
+            let confidenceClass = 'confidence';
+            if (data.confidence >= 0.7) {
+                confidenceClass += ' high';
+            } else if (data.confidence >= 0.4) {
+                confidenceClass += ' medium';
+            } else {
+                confidenceClass += ' low';
+            }
+            
             toneTypeEl.innerHTML = `
                 <span class="tone-badge ${toneClass}">${data.freq_type}</span>
-                <span class="confidence">${confidencePercent}% 信心度</span>
+                <span class="${confidenceClass}">${confidencePercent}% 信心度</span>
             `;
             
             // 文字內容
             originalTextEl.textContent = data.original;
             repairedTextEl.textContent = data.repaired_text || '無需修復';
             scenarioEl.textContent = data.scenario || '未分類';
+            
+            // 顯示修復說明（如果有）
+            if (data.repair_note) {
+                repairNoteEl.textContent = data.repair_note;
+                repairNoteEl.style.display = 'block';
+            } else {
+                repairNoteEl.style.display = 'none';
+            }
             
             // 顯示結果
             resultSection.classList.add('show');
@@ -315,3 +415,68 @@
     </script>
 </body>
 </html>
+```
+
+---
+
+## 🔑 主要修改重點
+
+### app.py 修改
+
+1. **函數名稱改為更準確的 `generate_contextual_response`**
+2. **分層處理邏輯**：
+   - < 10 字：太短提示
+   - 10-20 字 + 低信心：建議擴充
+   - Unknown：語氣不明確
+   - < 0.3 信心：人工確認
+
+3. **記錄更多 metadata**：
+   - `text_length`
+   - `has_repair_note`
+
+4. **API 文檔更新**：
+   - 描述加上 "for complete sentences"
+   - root 端點說明建議長度
+
+### playground.html 修改
+
+1. **新增明顯提示**：頂部藍色提示框
+2. **即時字數計數器**：
+   - < 10 字：橘色警告
+   - ≥ 15 字：綠色良好
+   - 其他：灰色
+
+3. **範例更新**：
+   - 改為完整句子範例
+   - 加上「避免使用」說明
+
+4. **顯示 repair_note**：
+   - 藍色區塊
+   - 清楚說明為何無法修復
+
+5. **信心度顏色**：
+   - ≥ 70%：綠色
+   - 40-70%：黃色
+   - < 40%：橘色
+
+---
+
+## 🎯 效果展示
+
+### 短句測試
+```
+輸入：「你到底想怎樣」（7 字）
+警告：提醒：文字較短可能影響判斷準確度
+結果：
+- 語氣：Unknown (23%) [橘色]
+- 修復：你到底想怎樣
+- 說明：此訊息較短（7 字）。Z1 專注於完整句子...
+```
+
+### 完整句測試
+```
+輸入：「我覺得這個方案可能需要再討論」（16 字）
+結果：
+- 語氣：Blur (72%) [綠色]
+- 修復：[正常修復版本]
+- 說明：[無]
