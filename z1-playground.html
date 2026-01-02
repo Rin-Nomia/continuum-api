@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh-TW">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -232,70 +232,70 @@
             <h1>💎 Z1 Tone Firewall</h1>
             <p class="tagline">Detect and repair tone issues in complete sentences</p>
             <div class="notice">
-                <strong>💡 最佳使用建議：</strong>輸入完整句子（15 字以上）以獲得最準確的語氣分析
+                <strong>💡 Best Practice:</strong> Enter complete sentences (15+ characters) for the most accurate tone analysis
             </div>
         </header>
         
         <div class="input-section">
             <textarea 
                 id="inputText" 
-                placeholder="輸入完整句子以獲得最佳分析結果...
+                placeholder="Enter a complete sentence for best results...
 
-建議範例：
-- 我覺得這個方案可能需要再討論一下，你怎麼看？
-- 這個期限實在太趕了，我們能不能延後幾天？
-- 我不太確定這樣做是否合適，需要你的意見
+Recommended examples:
+- I think this approach might need more discussion, what do you think?
+- This deadline seems too tight, could we extend it by a few days?
+- I'm not sure if this is the right way, I need your opinion
 
-避免使用：
-✗ 你到底想怎樣（太短，語氣不明確）
-✗ 不知道欸（缺乏完整表達）"
+Avoid:
+✗ What do you mean? (too short, unclear tone)
+✗ I don't know (lacks complete expression)"
             ></textarea>
-            <div id="charCounter" class="char-counter">0 字</div>
-            <button id="analyzeBtn" onclick="analyzeText()">分析語氣</button>
+            <div id="charCounter" class="char-counter">0 characters</div>
+            <button id="analyzeBtn" onclick="analyzeText()">Analyze Tone</button>
             <div id="errorMsg" class="error" style="display:none;"></div>
         </div>
         
         <div id="resultSection" class="result-section">
             <div class="result-item">
-                <div class="result-label">偵測語氣</div>
+                <div class="result-label">Detected Tone</div>
                 <div class="result-value" id="toneType"></div>
             </div>
             
             <div class="result-item">
-                <div class="result-label">原始文字</div>
+                <div class="result-label">Original Text</div>
                 <div class="result-value" id="originalText"></div>
             </div>
             
             <div class="result-item">
-                <div class="result-label">修復後文字</div>
+                <div class="result-label">Repaired Text</div>
                 <div class="result-value" id="repairedText"></div>
                 <div id="repairNote" class="repair-note" style="display:none;"></div>
             </div>
             
             <div class="result-item">
-                <div class="result-label">情境分類</div>
+                <div class="result-label">Scenario</div>
                 <div class="result-value" id="scenario"></div>
             </div>
         </div>
         
         <footer>
             <p>API: <a href="https://rinnomia-z1-tone-api.hf.space/docs" target="_blank">rinnomia-z1-tone-api.hf.space</a></p>
-            <p>95% accuracy on complete sentences • 5 tone types • 8-stage pipeline</p>
+            <p>95% accuracy on complete sentences • 5 tone types • 8-stage pipeline • Bilingual (EN/ZH)</p>
         </footer>
     </div>
 
     <script>
         const API_URL = 'https://rinnomia-z1-tone-api.hf.space/api/v1/analyze';
         
-        // 字數計數器
+        // Character counter
         const inputText = document.getElementById('inputText');
         const charCounter = document.getElementById('charCounter');
         
         inputText.addEventListener('input', function() {
             const count = this.value.trim().length;
-            charCounter.textContent = `${count} 字`;
+            charCounter.textContent = `${count} character${count !== 1 ? 's' : ''}`;
             
-            // 根據長度改變顏色
+            // Color based on length
             if (count < 10) {
                 charCounter.className = 'char-counter warning';
             } else if (count >= 15) {
@@ -311,24 +311,24 @@
             const resultSection = document.getElementById('resultSection');
             const errorMsg = document.getElementById('errorMsg');
             
-            // 清除錯誤訊息
+            // Clear error
             errorMsg.style.display = 'none';
             
-            // 驗證輸入
+            // Validate input
             if (!inputText) {
-                showError('請輸入要分析的文字');
+                showError('Please enter text to analyze');
                 return;
             }
             
-            // 長度警告（不阻擋，只提醒）
+            // Length warning (doesn't block)
             if (inputText.length < 10) {
-                showError('提醒：文字較短可能影響判斷準確度，建議輸入完整句子（15 字以上）');
-                // 繼續執行，不 return
+                showError('Note: Short text may affect accuracy. Complete sentences (15+ characters) recommended.');
+                // Continue anyway
             }
             
-            // 顯示載入狀態
+            // Show loading state
             analyzeBtn.disabled = true;
-            analyzeBtn.textContent = '分析中...';
+            analyzeBtn.textContent = 'Analyzing...';
             resultSection.classList.remove('show');
             
             try {
@@ -341,17 +341,17 @@
                 });
                 
                 if (!response.ok) {
-                    throw new Error(`API 錯誤: ${response.status}`);
+                    throw new Error(`API error: ${response.status}`);
                 }
                 
                 const data = await response.json();
                 displayResults(data);
                 
             } catch (error) {
-                showError(`分析失敗: ${error.message}`);
+                showError(`Analysis failed: ${error.message}`);
             } finally {
                 analyzeBtn.disabled = false;
-                analyzeBtn.textContent = '分析語氣';
+                analyzeBtn.textContent = 'Analyze Tone';
             }
         }
         
@@ -363,11 +363,11 @@
             const scenarioEl = document.getElementById('scenario');
             const resultSection = document.getElementById('resultSection');
             
-            // 語氣標籤
+            // Tone badge
             const toneClass = `tone-${data.freq_type.toLowerCase()}`;
             const confidencePercent = (data.confidence * 100).toFixed(0);
             
-            // 信心度顏色
+            // Confidence color
             let confidenceClass = 'confidence';
             if (data.confidence >= 0.7) {
                 confidenceClass += ' high';
@@ -379,15 +379,15 @@
             
             toneTypeEl.innerHTML = `
                 <span class="tone-badge ${toneClass}">${data.freq_type}</span>
-                <span class="${confidenceClass}">${confidencePercent}% 信心度</span>
+                <span class="${confidenceClass}">${confidencePercent}% confidence</span>
             `;
             
-            // 文字內容
+            // Text content
             originalTextEl.textContent = data.original;
-            repairedTextEl.textContent = data.repaired_text || '無需修復';
-            scenarioEl.textContent = data.scenario || '未分類';
+            repairedTextEl.textContent = data.repaired_text || 'No repair needed';
+            scenarioEl.textContent = data.scenario || 'Unclassified';
             
-            // 顯示修復說明（如果有）
+            // Show repair note (if exists)
             if (data.repair_note) {
                 repairNoteEl.textContent = data.repair_note;
                 repairNoteEl.style.display = 'block';
@@ -395,7 +395,7 @@
                 repairNoteEl.style.display = 'none';
             }
             
-            // 顯示結果
+            // Show results
             resultSection.classList.add('show');
         }
         
@@ -405,7 +405,7 @@
             errorMsg.style.display = 'block';
         }
         
-        // Enter 鍵支援（Shift+Enter 換行）
+        // Enter key support (Shift+Enter for newline)
         document.getElementById('inputText').addEventListener('keydown', function(e) {
             if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
@@ -419,64 +419,83 @@
 
 ---
 
-## 🔑 主要修改重點
+## 🔑 完整翻譯對照表
 
-### app.py 修改
-
-1. **函數名稱改為更準確的 `generate_contextual_response`**
-2. **分層處理邏輯**：
-   - < 10 字：太短提示
-   - 10-20 字 + 低信心：建議擴充
-   - Unknown：語氣不明確
-   - < 0.3 信心：人工確認
-
-3. **記錄更多 metadata**：
-   - `text_length`
-   - `has_repair_note`
-
-4. **API 文檔更新**：
-   - 描述加上 "for complete sentences"
-   - root 端點說明建議長度
-
-### playground.html 修改
-
-1. **新增明顯提示**：頂部藍色提示框
-2. **即時字數計數器**：
-   - < 10 字：橘色警告
-   - ≥ 15 字：綠色良好
-   - 其他：灰色
-
-3. **範例更新**：
-   - 改為完整句子範例
-   - 加上「避免使用」說明
-
-4. **顯示 repair_note**：
-   - 藍色區塊
-   - 清楚說明為何無法修復
-
-5. **信心度顏色**：
-   - ≥ 70%：綠色
-   - 40-70%：黃色
-   - < 40%：橘色
-
----
-
-## 🎯 效果展示
-
-### 短句測試
+### HTML 屬性
 ```
-輸入：「你到底想怎樣」（7 字）
-警告：提醒：文字較短可能影響判斷準確度
-結果：
-- 語氣：Unknown (23%) [橘色]
-- 修復：你到底想怎樣
-- 說明：此訊息較短（7 字）。Z1 專注於完整句子...
+zh-TW → en
 ```
 
-### 完整句測試
+### 標題與說明
 ```
-輸入：「我覺得這個方案可能需要再討論」（16 字）
-結果：
-- 語氣：Blur (72%) [綠色]
-- 修復：[正常修復版本]
-- 說明：[無]
+Z1 Tone Firewall (保持不變)
+Detect and repair tone issues in complete sentences (保持)
+💡 最佳使用建議 → 💡 Best Practice
+輸入完整句子（15 字以上）→ Enter complete sentences (15+ characters)
+以獲得最準確的語氣分析 → for the most accurate tone analysis
+```
+
+### Placeholder 文字
+```
+輸入完整句子以獲得最佳分析結果...
+→ Enter a complete sentence for best results...
+
+建議範例：
+→ Recommended examples:
+
+- 我覺得這個方案可能需要再討論一下，你怎麼看？
+→ • I think this approach might need more discussion, what do you think?
+
+- 這個期限實在太趕了，我們能不能延後幾天？
+→ • This deadline seems too tight, could we extend it by a few days?
+
+- 我不太確定這樣做是否合適，需要你的意見
+→ • I'm not sure if this is the right way, I need your opinion
+
+避免使用：
+→ Avoid:
+
+✗ 你到底想怎樣（太短，語氣不明確）
+→ ✗ What do you mean? (too short, unclear tone)
+
+✗ 不知道欸（缺乏完整表達）
+→ ✗ I don't know (lacks complete expression)
+```
+
+### UI 元素
+```
+0 字 → 0 characters
+分析語氣 → Analyze Tone
+分析中... → Analyzing...
+
+偵測語氣 → Detected Tone
+原始文字 → Original Text
+修復後文字 → Repaired Text
+情境分類 → Scenario
+
+信心度 → confidence
+無需修復 → No repair needed
+未分類 → Unclassified
+```
+
+### 錯誤訊息
+```
+請輸入要分析的文字
+→ Please enter text to analyze
+
+提醒：文字較短可能影響判斷準確度，建議輸入完整句子（15 字以上）
+→ Note: Short text may affect accuracy. Complete sentences (15+ characters) recommended.
+
+分析失敗
+→ Analysis failed
+
+API 錯誤
+→ API error
+```
+
+### Footer
+```
+95% accuracy on complete sentences
+5 tone types
+8-stage pipeline
+Bilingual (EN/ZH) ← 新增
