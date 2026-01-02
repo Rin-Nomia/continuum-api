@@ -60,10 +60,37 @@ class FeedbackRequest(BaseModel):
     helpful: int = Field(..., ge=1, le=5)
     accepted: bool
 
-# ===== 情境化回應函數 =====
+# ===== 語言偵測 =====
+def detect_language(text: str) -> str:
+    """
+    偵測文字主要語言
+    
+    Args:
+        text: 要偵測的文字
+    
+    Returns:
+        'zh' (中文) 或 'en' (英文)
+    """
+    # 移除空白和標點，只保留字母
+    clean_text = ''.join(c for c in text if c.isalpha() or '\u4e00' <= c <= '\u9fff')
+    
+    if not clean_text:
+        return 'zh'  # 預設中文
+    
+    # 計算中文字元數量
+    chinese_chars = sum(1 for char in clean_text if '\u4e00' <= char <= '\u9fff')
+    
+    # 如果超過 30% 是中文字元 → 判定為中文
+    if len(clean_text) == 0:
+        return 'zh'
+    
+    chinese_ratio = chinese_chars / len(clean_text)
+    return 'zh' if chinese_ratio > 0.3 else 'en'
+
+# ===== 雙語情境化回應函數 =====
 def generate_contextual_response(text: str, freq_type: str, confidence: float) -> tuple[str, str]:
     """
-    根據文字長度和信心度給出合理回應
+    根據文字長度、信心度和語言給出合理回應
     
     Args:
         text: 原始文字
@@ -74,34 +101,43 @@ def generate_contextual_response(text: str, freq_type: str, confidence: float) -
         (repaired_text, repair_note)
     """
     text_len = len(text.strip())
+    lang = detect_language(text)
     
-    # 情況 1：短句 (<10 字)
+    # 定義雙語訊息模板
+    messages = {
+        'short': {
+            'zh': f"此訊息較短（{text_len} 字）。Z1 專注於完整句子（建議 15 字以上）的語氣分析，以獲得最準確的判斷結果。",
+            'en': f"This message is short ({text_len} characters). Z1 focuses on complete sentences (15+ characters recommended) for accurate tone analysis."
+        },
+        'medium_low_conf': {
+            'zh': f"語氣判斷信心度 {int(confidence*100)}%。Z1 在完整、明確的句子上表現最佳，建議將表達擴充為更完整的句子以獲得更精準的分析。",
+            'en': f"Tone detection confidence: {int(confidence*100)}%. Z1 performs best on complete, clear sentences. Consider expanding your expression for more accurate analysis."
+        },
+        'unknown': {
+            'zh': "此訊息的語氣特徵不明確。Z1 專注於完整句子的語氣分析，建議使用更具體、完整的表達方式以獲得準確判斷。",
+            'en': "Tone characteristics unclear. Z1 focuses on complete sentence analysis. Use more specific and complete expressions for accurate detection."
+        },
+        'low_conf': {
+            'zh': f"系統判斷信心度 {int(confidence*100)}%。建議人工確認是否需要調整表達方式。",
+            'en': f"System confidence: {int(confidence*100)}%. Manual review recommended to determine if expression adjustment is needed."
+        }
+    }
+    
+    # 情況 1：短句 (<10 字元/字)
     if text_len < 10:
-        return (
-            text,
-            f"此訊息較短（{text_len} 字）。Z1 專注於完整句子（建議 15 字以上）的語氣分析，以獲得最準確的判斷結果。"
-        )
+        return (text, messages['short'][lang])
     
-    # 情況 2：中等長度 + 低信心 (10-20 字, <0.4)
+    # 情況 2：中等長度 + 低信心 (10-20 字元/字, <0.4)
     elif text_len < 20 and confidence < 0.4:
-        return (
-            text,
-            f"語氣判斷信心度 {int(confidence*100)}%。Z1 在完整、明確的句子上表現最佳，建議將表達擴充為更完整的句子以獲得更精準的分析。"
-        )
+        return (text, messages['medium_low_conf'][lang])
     
     # 情況 3：Unknown 類型
     elif freq_type == "Unknown":
-        return (
-            text,
-            "此訊息的語氣特徵不明確。Z1 專注於完整句子的語氣分析，建議使用更具體、完整的表達方式以獲得準確判斷。"
-        )
+        return (text, messages['unknown'][lang])
     
     # 情況 4：一般低信心 (<0.3)
     elif confidence < 0.3:
-        return (
-            text,
-            f"系統判斷信心度 {int(confidence*100)}%。建議人工確認是否需要調整表達方式。"
-        )
+        return (text, messages['low_conf'][lang])
     
     # 不應該走到這裡
     return (text, None)
@@ -139,6 +175,7 @@ async def root():
         "version": "1.0.0",
         "model": "claude-haiku-4-5-20251001",
         "focus": "Complete sentence tone analysis (15+ characters recommended)",
+        "languages": ["zh", "en"],
         "docs": "/docs"
     }
 
@@ -158,6 +195,9 @@ async def analyze(request: AnalyzeRequest):
         raise HTTPException(503, "Pipeline not ready")
     
     try:
+        # 偵測語言
+        detected_lang = detect_language(request.text)
+        
         # 執行分析
         result = pipeline.process(request.text)
         
@@ -177,7 +217,7 @@ async def analyze(request: AnalyzeRequest):
                 freq_type=freq_type,
                 confidence=confidence
             )
-            logger.info(f"ℹ️ Contextual response: len={len(request.text)}, type={freq_type}, conf={confidence:.2f}")
+            logger.info(f"ℹ️ Contextual response: len={len(request.text)}, lang={detected_lang}, type={freq_type}, conf={confidence:.2f}")
         
         # 記錄數據
         log_id = None
@@ -189,6 +229,7 @@ async def analyze(request: AnalyzeRequest):
                     metadata={
                         'model': 'claude-haiku-4-5-20251001',
                         'api_version': 'v1',
+                        'detected_language': detected_lang,
                         'truncated': result.get('truncated', False),
                         'low_confidence': confidence < 0.3,
                         'text_length': len(request.text),
