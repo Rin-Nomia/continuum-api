@@ -1,4 +1,4 @@
-"""Z1 API - 自動從 z1_mvp 同步 + GitHub 資料備份"""
+"""Z1 API - Auto-sync from z1_mvp + GitHub data backup"""
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
@@ -8,7 +8,7 @@ import os
 from datetime import datetime
 import asyncio
 
-# 這些會被 GitHub Actions 自動複製過來
+# Auto-copied by GitHub Actions
 from pipeline.z1_pipeline import Z1Pipeline
 from logger import DataLogger, GitHubBackup
 
@@ -29,7 +29,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 初始化
+# Initialize
 try:
     pipeline = Z1Pipeline(config_path='configs/settings.yaml', debug=False)
     data_logger = DataLogger()
@@ -41,7 +41,7 @@ except Exception as e:
     data_logger = None
     gh_backup = None
 
-# ===== 資料模型 =====
+# ===== Data Models =====
 class AnalyzeRequest(BaseModel):
     text: str = Field(..., min_length=1, max_length=5000)
 
@@ -60,42 +60,42 @@ class FeedbackRequest(BaseModel):
     helpful: int = Field(..., ge=1, le=5)
     accepted: bool
 
-# ===== 語言偵測 =====
+# ===== Language Detection =====
 def detect_language(text: str) -> str:
     """
-    偵測文字主要語言
+    Detect primary language of text
     
     Args:
-        text: 要偵測的文字
+        text: Text to detect
     
     Returns:
-        'zh' (中文) 或 'en' (英文)
+        'zh' (Chinese) or 'en' (English)
     """
-    # 移除空白和標點，只保留字母
+    # Keep only letters and Chinese characters
     clean_text = ''.join(c for c in text if c.isalpha() or '\u4e00' <= c <= '\u9fff')
     
     if not clean_text:
-        return 'zh'  # 預設中文
+        return 'zh'  # Default to Chinese
     
-    # 計算中文字元數量
+    # Count Chinese characters
     chinese_chars = sum(1 for char in clean_text if '\u4e00' <= char <= '\u9fff')
     
-    # 如果超過 30% 是中文字元 → 判定為中文
+    # If over 30% Chinese characters → classify as Chinese
     if len(clean_text) == 0:
         return 'zh'
     
     chinese_ratio = chinese_chars / len(clean_text)
     return 'zh' if chinese_ratio > 0.3 else 'en'
 
-# ===== 雙語情境化回應函數 =====
+# ===== Bilingual Contextual Response =====
 def generate_contextual_response(text: str, freq_type: str, confidence: float) -> tuple[str, str]:
     """
-    根據文字長度、信心度和語言給出合理回應
+    Generate contextual response based on text length, confidence, and language
     
     Args:
-        text: 原始文字
-        freq_type: 語氣類型
-        confidence: 信心度
+        text: Original text
+        freq_type: Tone type
+        confidence: Confidence score
     
     Returns:
         (repaired_text, repair_note)
@@ -103,7 +103,7 @@ def generate_contextual_response(text: str, freq_type: str, confidence: float) -
     text_len = len(text.strip())
     lang = detect_language(text)
     
-    # 定義雙語訊息模板
+    # Bilingual message templates
     messages = {
         'short': {
             'zh': f"此訊息較短（{text_len} 字）。Z1 專注於完整句子（建議 15 字以上）的語氣分析，以獲得最準確的判斷結果。",
@@ -123,31 +123,31 @@ def generate_contextual_response(text: str, freq_type: str, confidence: float) -
         }
     }
     
-    # 情況 1：短句 (<10 字元/字)
+    # Case 1: Short message (<10 chars)
     if text_len < 10:
         return (text, messages['short'][lang])
     
-    # 情況 2：中等長度 + 低信心 (10-20 字元/字, <0.4)
+    # Case 2: Medium length + low confidence (10-20 chars, <0.4)
     elif text_len < 20 and confidence < 0.4:
         return (text, messages['medium_low_conf'][lang])
     
-    # 情況 3：Unknown 類型
+    # Case 3: Unknown type
     elif freq_type == "Unknown":
         return (text, messages['unknown'][lang])
     
-    # 情況 4：一般低信心 (<0.3)
+    # Case 4: General low confidence (<0.3)
     elif confidence < 0.3:
         return (text, messages['low_conf'][lang])
     
-    # 不應該走到這裡
+    # Should not reach here
     return (text, None)
 
-# ===== 背景任務：定期備份 =====
+# ===== Background Task: Periodic Backup =====
 async def periodic_backup():
-    """每小時備份一次到 GitHub"""
+    """Backup to GitHub every hour"""
     while True:
         try:
-            await asyncio.sleep(3600)  # 1 小時
+            await asyncio.sleep(3600)  # 1 hour
             if gh_backup:
                 gh_backup.backup()
                 logger.info("✅ Logs backed up to GitHub")
@@ -156,7 +156,7 @@ async def periodic_backup():
 
 @app.on_event("startup")
 async def startup_event():
-    """啟動時恢復之前的 logs"""
+    """Restore previous logs on startup"""
     if gh_backup:
         try:
             gh_backup.restore()
@@ -164,10 +164,10 @@ async def startup_event():
         except:
             logger.info("ℹ️ No previous logs, starting fresh")
     
-    # 啟動備份任務
+    # Start backup task
     asyncio.create_task(periodic_backup())
 
-# ===== API 端點 =====
+# ===== API Endpoints =====
 @app.get("/")
 async def root():
     return {
@@ -190,27 +190,27 @@ async def health():
 
 @app.post("/api/v1/analyze", response_model=AnalyzeResponse)
 async def analyze(request: AnalyzeRequest):
-    """分析語氣（建議輸入完整句子以獲得最佳結果）"""
+    """Analyze tone (complete sentences recommended for best results)"""
     if not pipeline:
         raise HTTPException(503, "Pipeline not ready")
     
     try:
-        # 偵測語言
+        # Detect language
         detected_lang = detect_language(request.text)
         
-        # 執行分析
+        # Execute analysis
         result = pipeline.process(request.text)
         
         if result.get("error"):
             raise HTTPException(400, result.get("reason"))
         
-        # 取得基本結果
+        # Get basic results
         freq_type = result["freq_type"]
         confidence = result["confidence"]["final"]
         repaired_text = result["output"].get("repaired_text")
         repair_note = None
         
-        # 處理 Unknown 或低信心度的情況
+        # Handle Unknown or low confidence cases
         if freq_type == "Unknown" or confidence < 0.3:
             repaired_text, repair_note = generate_contextual_response(
                 text=request.text,
@@ -219,7 +219,7 @@ async def analyze(request: AnalyzeRequest):
             )
             logger.info(f"ℹ️ Contextual response: len={len(request.text)}, lang={detected_lang}, type={freq_type}, conf={confidence:.2f}")
         
-        # 記錄數據
+        # Log data
         log_id = None
         if data_logger:
             try:
@@ -240,7 +240,7 @@ async def analyze(request: AnalyzeRequest):
             except Exception as e:
                 logger.error(f"⚠️ Log failed: {e}")
         
-        # 回傳
+        # Return response
         return AnalyzeResponse(
             original=result["original"],
             freq_type=freq_type,
@@ -259,7 +259,7 @@ async def analyze(request: AnalyzeRequest):
 
 @app.post("/api/v1/feedback")
 async def submit_feedback(feedback: FeedbackRequest):
-    """接收用戶反饋"""
+    """Submit user feedback"""
     if not data_logger:
         raise HTTPException(503, "Logger not ready")
     
@@ -277,7 +277,7 @@ async def submit_feedback(feedback: FeedbackRequest):
 
 @app.get("/api/v1/stats")
 async def get_stats():
-    """取得統計"""
+    """Get usage statistics"""
     if not data_logger:
         raise HTTPException(503, "Logger not ready")
     
@@ -289,7 +289,7 @@ async def get_stats():
 
 @app.post("/api/v1/backup")
 async def manual_backup():
-    """手動觸發備份"""
+    """Trigger manual backup to GitHub"""
     if not gh_backup:
         raise HTTPException(503, "Backup not ready")
     
@@ -309,9 +309,9 @@ async def manual_backup():
 
 @app.post("/api/v1/test-backup")
 async def test_backup():
-    """測試 GitHub 備份功能（完整測試）"""
+    """Test GitHub backup functionality (comprehensive test)"""
     try:
-        # 建立測試數據
+        # Create test data
         test_result = {
             'original': 'Manual backup test from API',
             'freq_type': 'Test',
@@ -328,7 +328,7 @@ async def test_backup():
             }
         }
         
-        # 記錄測試數據
+        # Log test data
         if data_logger:
             log_entry = data_logger.log(
                 input_text='Manual backup test from API',
@@ -343,14 +343,14 @@ async def test_backup():
         else:
             raise HTTPException(503, "Logger not ready")
         
-        # 執行備份
+        # Execute backup
         if gh_backup:
             gh_backup.backup()
             logger.info("✅ Test backup completed")
         else:
             raise HTTPException(503, "Backup not configured")
         
-        # 準備回應
+        # Prepare response
         gh_repo = os.environ.get('GH_REPO', 'unknown')
         date_str = datetime.now().strftime('%Y-%m-%d')
         
@@ -387,3 +387,6 @@ if __name__ == "__main__":
         host="0.0.0.0",
         port=int(os.environ.get("PORT", 7860))
     )
+```
+
+---
