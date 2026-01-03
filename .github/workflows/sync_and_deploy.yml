@@ -1,4 +1,4 @@
-name: 同步 z1_mvp 並部署 API
+name: 同步 z1_mvp 並部署 Continuum API
 
 on:
   push:
@@ -15,11 +15,11 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-      # 關卡 1：抓取當前 repo (z1-api)
-      - name: 關卡 1 - Checkout z1-api
+      # 關卡 1：抓取當前 repo (continuum-api)
+      - name: 關卡 1 - Checkout continuum-api
         uses: actions/checkout@v4
         with:
-          path: z1-api
+          path: continuum-api
       
       # 關卡 2：抓取 z1_mvp
       - name: 關卡 2 - Checkout z1_mvp
@@ -34,18 +34,18 @@ jobs:
         run: |
           echo "📦 開始複製資料夾..."
           
-          cp -r z1_mvp/pipeline z1-api/
+          cp -r z1_mvp/pipeline continuum-api/
           echo "✅ pipeline/ 已複製"
           
-          cp -r z1_mvp/core z1-api/
+          cp -r z1_mvp/core continuum-api/
           echo "✅ core/ 已複製"
           
-          cp -r z1_mvp/configs z1-api/
+          cp -r z1_mvp/configs continuum-api/
           echo "✅ configs/ 已複製"
           
           echo ""
           echo "📂 檔案結構："
-          ls -lh z1-api/
+          ls -lh continuum-api/
       
       # 關卡 4：設定 Python
       - name: 關卡 4 - Setup Python
@@ -55,7 +55,7 @@ jobs:
       
       # 關卡 5：測試 Pipeline
       - name: 關卡 5 - 測試 Pipeline
-        working-directory: z1-api
+        working-directory: continuum-api
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
@@ -88,9 +88,9 @@ jobs:
           print(f"   場景：{result['output']['scenario']}")
           PYTEST
       
-      # 關卡 6：部署到 HuggingFace（Python API 版本）
+      # 關卡 6：部署到 HuggingFace
       - name: 關卡 6 - 部署到 HuggingFace
-        working-directory: z1-api
+        working-directory: continuum-api
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
@@ -106,7 +106,6 @@ jobs:
           from huggingface_hub import HfApi
           from datetime import datetime
           
-          # 取得環境變數
           token = os.environ['HF_TOKEN']
           username = os.environ['HF_USERNAME']
           space_name = os.environ['HF_SPACE']
@@ -115,10 +114,8 @@ jobs:
           print(f"📍 目標 Space：{repo_id}")
           print()
           
-          # 初始化 API
           api = HfApi(token=token)
           
-          # 檢查 Space 是否存在
           try:
               api.space_info(repo_id)
               print(f"✅ Space 已存在：{repo_id}")
@@ -138,13 +135,12 @@ jobs:
           print()
           print("📤 上傳檔案中...")
           
-          # 上傳資料夾
           try:
               api.upload_folder(
                   folder_path=".",
                   repo_id=repo_id,
                   repo_type="space",
-                  commit_message=f"Auto deploy Z1 API [{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}]"
+                  commit_message=f"Auto deploy Continuum API [{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}]"
               )
               print("✅ 上傳成功！")
           except Exception as e:
