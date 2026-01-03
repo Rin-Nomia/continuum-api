@@ -7,7 +7,7 @@ on:
 
 env:
   HF_USERNAME: RinNomia
-  HF_SPACE_NAME: z1-tone-api
+  HF_SPACE_NAME: continuum-api
 
 jobs:
   deploy:
