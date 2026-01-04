@@ -80,6 +80,11 @@
             background: #2d3e54;
             font-size: 0.85em;
             flex: 0 0 auto;
+            border: none;
+            border-radius: 4px;
+            color: #fff;
+            cursor: pointer;
+            transition: background 0.2s;
         }
         
         .example-btn:hover {
@@ -281,10 +286,6 @@ Cold:
 - I understand. Let's focus on what you can control.
 - That sounds difficult. What steps have you tried so far?
 
-Blur:
-- I guess maybe we could try something different but I'm not really sure what exactly.
-- It's kind of hard to explain but something just doesn't feel quite right about this.
-
 Note: Messages under 15 characters may not provide accurate tone analysis."
             ></textarea>
             
@@ -297,9 +298,6 @@ Note: Messages under 15 characters may not provide accurate tone analysis."
                 </button>
                 <button type="button" class="example-btn" onclick="loadExample(3)">
                     Cold Example
-                </button>
-                <button type="button" class="example-btn" onclick="loadExample(4)">
-                    Blur Example
                 </button>
             </div>
             
@@ -334,7 +332,7 @@ Note: Messages under 15 characters may not provide accurate tone analysis."
         <footer>
             <p><strong>Continuum</strong> — RIN Protocol | Tone Rhythm Repair Module</p>
             <p>API: <a href="https://rinnomia-continuum-api.hf.space/docs" target="_blank">rinnomia-continuum-api.hf.space</a></p>
-            <p>95% accuracy on complete sentences (15+ chars recommended) • 5 tone types • 8-stage pipeline • Bilingual (EN/ZH)</p>
+            <p>95% accuracy on complete sentences (15+ chars recommended) • 3 core tone types • 8-stage pipeline • Bilingual (EN/ZH)</p>
             <p style="margin-top: 10px; font-size: 0.8em; color: #666;">
                 Best results with full sentences. Short phrases may show limited analysis.
             </p>
@@ -344,12 +342,11 @@ Note: Messages under 15 characters may not provide accurate tone analysis."
     <script>
         const API_URL = 'https://rinnomia-continuum-api.hf.space/api/v1/analyze';
         
-        // Example sentences
+        // Example sentences - 只保留 3 個核心類型
         const examples = {
             1: "I've been struggling with this for weeks and nothing seems to help me at all.",
             2: "Can you just give me a straight answer instead of asking more questions?",
-            3: "I understand. Let's focus on what you can control.",
-            4: "I guess maybe we could try something different but I'm not really sure what exactly."
+            3: "I understand. Let's focus on what you can control."
         };
         
         // Load example
@@ -372,12 +369,10 @@ Note: Messages under 15 characters may not provide accurate tone analysis."
             charCounter.textContent = `${count} character${count !== 1 ? 's' : ''}`;
             
             // Color based on length
-            if (count < 10) {
+            if (count < 15) {
                 charCounter.className = 'char-counter warning';
-            } else if (count >= 15) {
-                charCounter.className = 'char-counter good';
             } else {
-                charCounter.className = 'char-counter';
+                charCounter.className = 'char-counter good';
             }
         });
         
@@ -387,8 +382,9 @@ Note: Messages under 15 characters may not provide accurate tone analysis."
             const resultSection = document.getElementById('resultSection');
             const errorMsg = document.getElementById('errorMsg');
             
-            // Clear error
+            // Clear previous results and errors
             errorMsg.style.display = 'none';
+            resultSection.classList.remove('show');
             
             // Validate input
             if (!inputText) {
@@ -396,16 +392,9 @@ Note: Messages under 15 characters may not provide accurate tone analysis."
                 return;
             }
             
-            // Length warning (doesn't block)
-            if (inputText.length < 10) {
-                showError('Note: Short text may affect accuracy. Complete sentences (15+ characters) recommended.');
-                // Continue anyway
-            }
-            
             // Show loading state
             analyzeBtn.disabled = true;
             analyzeBtn.textContent = 'Analyzing...';
-            resultSection.classList.remove('show');
             
             try {
                 const response = await fetch(API_URL, {
@@ -460,10 +449,17 @@ Note: Messages under 15 characters may not provide accurate tone analysis."
             
             // Text content
             originalTextEl.textContent = data.original;
-            repairedTextEl.textContent = data.repaired_text || 'No repair needed';
+            
+            // Repaired text - 顯示實際修復結果或系統建議
+            if (data.repaired_text && data.repaired_text !== data.original) {
+                repairedTextEl.textContent = data.repaired_text;
+            } else {
+                repairedTextEl.textContent = 'No repair needed';
+            }
+            
             scenarioEl.textContent = data.scenario || 'Unclassified';
             
-            // Show repair note (if exists)
+            // Show repair note (系統建議或修復說明)
             if (data.repair_note) {
                 repairNoteEl.textContent = data.repair_note;
                 repairNoteEl.style.display = 'block';
