@@ -64,6 +64,28 @@
             margin-bottom: 20px;
         }
         
+        .example-buttons {
+            margin-top: 15px;
+            margin-bottom: 10px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            justify-content: center;
+        }
+        
+        .example-btn {
+            width: auto;
+            padding: 8px 16px;
+            margin: 0;
+            background: #2d3e54;
+            font-size: 0.85em;
+            flex: 0 0 auto;
+        }
+        
+        .example-btn:hover {
+            background: #3d4e64;
+        }
+        
         .char-counter {
             text-align: right;
             color: #666;
@@ -224,6 +246,10 @@
             color: #4a9eff;
             text-decoration: none;
         }
+        
+        footer p {
+            margin: 8px 0;
+        }
     </style>
 </head>
 <body>
@@ -232,24 +258,51 @@
             <h1>💎 Continuum</h1>
             <p class="tagline">RIN Protocol — Tone Rhythm Repair Module</p>
             <div class="notice">
-                <strong>💡 Best Practice:</strong> Enter complete sentences (15+ characters) for the most accurate tone analysis
+                <strong>💡 Best Practice:</strong> Enter complete sentences (15+ characters recommended) for accurate tone analysis
             </div>
         </header>
         
         <div class="input-section">
             <textarea 
                 id="inputText" 
-                placeholder="Enter a complete sentence for best results...
+                placeholder="Enter a complete sentence for best results (15+ characters recommended)...
 
-Recommended examples:
-- I think this approach might need more discussion, what do you think?
-- This deadline seems too tight, could we extend it by a few days?
-- I'm not sure if this is the right way, I need your opinion
+Try these examples:
 
-Avoid:
-✗ What do you mean? (too short, unclear tone)
-✗ I don't know (lacks complete expression)"
+Anxious:
+- I've been struggling with this for weeks and nothing seems to help me at all.
+- I don't even know why I'm telling you this anymore, you probably can't help anyway.
+
+Sharp:
+- Can you just give me a straight answer instead of asking more questions?
+- Honestly I'm just really tired of explaining the same thing over and over again.
+
+Cold:
+- I understand. Let's focus on what you can control.
+- That sounds difficult. What steps have you tried so far?
+
+Blur:
+- I guess maybe we could try something different but I'm not really sure what exactly.
+- It's kind of hard to explain but something just doesn't feel quite right about this.
+
+Note: Messages under 15 characters may not provide accurate tone analysis."
             ></textarea>
+            
+            <div class="example-buttons">
+                <button type="button" class="example-btn" onclick="loadExample(1)">
+                    Anxious Example
+                </button>
+                <button type="button" class="example-btn" onclick="loadExample(2)">
+                    Sharp Example
+                </button>
+                <button type="button" class="example-btn" onclick="loadExample(3)">
+                    Cold Example
+                </button>
+                <button type="button" class="example-btn" onclick="loadExample(4)">
+                    Blur Example
+                </button>
+            </div>
+            
             <div id="charCounter" class="char-counter">0 characters</div>
             <button id="analyzeBtn" onclick="analyzeText()">Analyze Tone</button>
             <div id="errorMsg" class="error" style="display:none;"></div>
@@ -279,14 +332,36 @@ Avoid:
         </div>
         
         <footer>
+            <p><strong>Continuum</strong> — RIN Protocol | Tone Rhythm Repair Module</p>
             <p>API: <a href="https://rinnomia-continuum-api.hf.space/docs" target="_blank">rinnomia-continuum-api.hf.space</a></p>
-            <p>95% accuracy on complete sentences • 5 tone types • 8-stage pipeline • Bilingual (EN/ZH)</p>
-            <p style="margin-top: 10px; color: #888;">RIN Protocol — Continuum</p>
+            <p>95% accuracy on complete sentences (15+ chars recommended) • 5 tone types • 8-stage pipeline • Bilingual (EN/ZH)</p>
+            <p style="margin-top: 10px; font-size: 0.8em; color: #666;">
+                Best results with full sentences. Short phrases may show limited analysis.
+            </p>
         </footer>
     </div>
 
     <script>
         const API_URL = 'https://rinnomia-continuum-api.hf.space/api/v1/analyze';
+        
+        // Example sentences
+        const examples = {
+            1: "I've been struggling with this for weeks and nothing seems to help me at all.",
+            2: "Can you just give me a straight answer instead of asking more questions?",
+            3: "I understand. Let's focus on what you can control.",
+            4: "I guess maybe we could try something different but I'm not really sure what exactly."
+        };
+        
+        // Load example
+        function loadExample(num) {
+            const inputText = document.getElementById('inputText');
+            const charCounter = document.getElementById('charCounter');
+            
+            inputText.value = examples[num];
+            const count = examples[num].length;
+            charCounter.textContent = `${count} character${count !== 1 ? 's' : ''}`;
+            charCounter.className = 'char-counter good';
+        }
         
         // Character counter
         const inputText = document.getElementById('inputText');
