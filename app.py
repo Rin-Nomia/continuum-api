@@ -10,7 +10,7 @@ import logging
 import os
 
 from pipeline.z1_pipeline import Z1Pipeline
-from utils.logger import DataLogger, GitHubBackup
+from logger import DataLogger, GitHubBackup
 
 # 設定 logging
 logging.basicConfig(
