@@ -67,7 +67,7 @@ async def startup_event():
     
     # Initialize GitHub backup (optional)
     try:
-        if os.environ.get('GH_TOKEN') and os.environ.get('GH_REPO'):
+        if os.environ.get('GITHUB_TOKEN') and os.environ.get('GITHUB_REPO'):
             logger.info("📦 Initializing GitHub Backup...")
             github_backup = GitHubBackup(log_dir='logs')
             github_backup.restore()
