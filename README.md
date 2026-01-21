@@ -23,14 +23,11 @@ It is a **tone safety layer** designed to prevent conversational breakdowns caus
 
 Given a **single sentence**, Continuum will:
 
-1. **Normalize and gate the input**  
-   (length, language, safety checks)
-2. **Analyze rhythm and emotional pressure**  
-   (speed, intensity, pause patterns)
-3. **Classify tone misalignment type**  
-   (Anxious / Cold / Sharp / Blur / Pushy)
+1. **Normalize and gate the input** (length, language, safety checks)
+2. **Analyze rhythm and emotional pressure** (speed, intensity, pause patterns)
+3. **Classify tone misalignment type** (Anxious / Cold / Sharp / Blur / Pushy)
 4. **Estimate confidence of the judgment**
-5. **Decide whether to:**
+5. **Decide whether to**:
    - repair the tone
    - suggest an adjustment
    - or leave it untouched (safe)
@@ -53,34 +50,33 @@ This design prevents over-correction and preserves the user’s original intent.
 
 ## 🧪 Output Modes
 
-- **repair**  
-  → Tone is adjusted while preserving meaning
-
-- **suggest**  
-  → Original text kept, guidance provided
-
-- **no-op**  
-  → Tone is already safe; no change applied
+- **repair** → Tone is adjusted while preserving meaning
+- **suggest** → Original text kept, guidance provided
+- **no-op** → Tone is already safe; no change applied
 
 ---
 
 ## 🏗️ Architecture Overview
-Input Text
-↓
-Normalization & Length Gate
-↓
-Rhythm Analysis (speed / emotion / pause)
-↓
-Tone Classification (rule-based + margin confidence)
-↓
-Confidence Calibration (rhythm-aware)
-↓
-Router
-├── repair     (high confidence)
-├── suggest    (medium confidence)
-└── no-op      (safe / neutral)
-↓
+
+Input Text  
+↓  
+Normalization & Length Gate  
+↓  
+Out-of-Scope Safety Gate (crisis/self-harm)  
+↓  
+Rhythm Analysis (speed / emotion / pause)  
+↓  
+Tone Classification (rule-based + margin confidence)  
+↓  
+Confidence Calibration (rhythm-aware)  
+↓  
+Router  
+├── repair (high confidence)  
+├── suggest (medium confidence)  
+└── no-op (safe / neutral)  
+↓  
 Output
+
 ---
 
 ## 🚫 What This System Explicitly Does NOT Do
@@ -107,24 +103,27 @@ Continuum is **not designed** to handle:
 - Severe mental health crises
 - Situations requiring emergency intervention or clinical judgment
 
-In such cases, the system will default to **conservative behavior**  
-(`Unknown` / `no-op`) to avoid harmful over-intervention.
+In such cases, the system will trigger an **Out-of-Scope Safety Gate** and return:
+
+- `freq_type: "OutOfScope"`
+- `mode: "no-op"`
+- `scenario: "crisis_out_of_scope"`
+- No repaired output
 
 > **Design principle:**  
-> Continuum only intervenes where **tone affects AI response quality**  
+> Continuum only intervenes where **tone affects AI response quality**,  
 > but **does not cross into crisis or medical territory**.
 
-It is a **preventive, non-therapeutic tone repair layer**,  
-meant to improve conversational safety — not replace safety or crisis systems.
+It is a **preventive, non-therapeutic tone repair layer**, meant to improve conversational safety — not replace crisis systems.
 
 ---
 
 ## 🧩 Design Philosophy
 
-- Explainable over powerful  
-- Predictable over clever  
-- Safety gates over maximal recall  
-- User voice preserved at all times  
+- Explainable over powerful
+- Predictable over clever
+- Safety gates over maximal recall
+- User voice preserved at all times
 
 Continuum is designed as a **pre-LLM tone firewall**, not a replacement for the model itself.
 
@@ -133,30 +132,30 @@ Continuum is designed as a **pre-LLM tone firewall**, not a replacement for the 
 ## 🚀 API Endpoints
 
 ### Health Check
+
 ```bash
 GET /health
 Analyze Single Sentence
 POST /api/v1/analyze
+Body:
 {
   "text": "your input text"
 }
-Response Example
+Response Example:
 {
   "freq_type": "Anxious",
-  "confidence": {
-    "final": 0.73
-  },
-  "mode": "repair",
-  "output": {
-    "repaired_text": "I'm here with you. We can take this step by step."
-  }
+  "confidence": 0.73,
+  "scenario": "general",
+  "repaired_text": "I'm here with you. We can take this step by step.",
+  "repair_note": null
 }
+
+⸻
 
 🔄 Sync & Deployment
 
 This repository automatically syncs pipeline, core logic, and configs from:
-
-🔗 https://github.com/Rin-Nomia/z1_mvp
+	•	https://github.com/Rin-Nomia/z1_mvp
 
 ⚠️ Do not edit synced files directly.
 All logic changes should be made in z1_mvp.
