@@ -1,218 +1,211 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Continuum - API Playground</title>
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Continuum - API Playground</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
 
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-            background: #0a0a0a;
-            color: #e0e0e0;
-            padding: 20px;
-            line-height: 1.6;
-        }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #0a0a0a;
+      color: #e0e0e0;
+      padding: 20px;
+      line-height: 1.6;
+    }
 
-        .container { max-width: 800px; margin: 0 auto; }
+    .container { max-width: 800px; margin: 0 auto; }
+    header { text-align: center; margin-bottom: 40px; }
 
-        header { text-align: center; margin-bottom: 40px; }
+    h1 { font-size: 2em; margin-bottom: 10px; color: #fff; }
+    .tagline { color: #888; font-size: 0.9em; margin-bottom: 8px; }
 
-        h1 { font-size: 2em; margin-bottom: 10px; color: #fff; }
+    .notice {
+      background: #1a2332;
+      border: 1px solid #2d3e54;
+      border-radius: 6px;
+      padding: 12px;
+      color: #88b3ff;
+      font-size: 0.85em;
+      text-align: center;
+      margin-top: 12px;
+    }
+    .notice strong { color: #4a9eff; }
 
-        .tagline { color: #888; font-size: 0.9em; margin-bottom: 8px; }
+    .input-section {
+      background: #1a1a1a;
+      border: 1px solid #333;
+      border-radius: 8px;
+      padding: 20px;
+      margin-bottom: 20px;
+    }
 
-        .notice {
-            background: #1a2332;
-            border: 1px solid #2d3e54;
-            border-radius: 6px;
-            padding: 12px;
-            color: #88b3ff;
-            font-size: 0.85em;
-            text-align: center;
-            margin-top: 12px;
-        }
+    .example-buttons {
+      margin-top: 15px;
+      margin-bottom: 10px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      justify-content: center;
+    }
 
-        .notice strong { color: #4a9eff; }
+    .example-btn {
+      width: auto;
+      padding: 8px 16px;
+      background: #2d3e54;
+      font-size: 0.85em;
+      border: none;
+      border-radius: 4px;
+      color: #fff;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
 
-        .input-section {
-            background: #1a1a1a;
-            border: 1px solid #333;
-            border-radius: 8px;
-            padding: 20px;
-            margin-bottom: 20px;
-        }
+    .example-btn:hover { background: #3d4e64; }
 
-        .example-buttons {
-            margin-top: 15px;
-            margin-bottom: 10px;
-            display: flex;
-            flex-wrap: wrap;
-            gap: 8px;
-            justify-content: center;
-        }
+    .char-counter {
+      text-align: right;
+      color: #666;
+      font-size: 0.85em;
+      margin-top: 8px;
+    }
+    .char-counter.warning { color: #ff922b; }
+    .char-counter.good { color: #51cf66; }
 
-        .example-btn {
-            width: auto;
-            padding: 8px 16px;
-            margin: 0;
-            background: #2d3e54;
-            font-size: 0.85em;
-            flex: 0 0 auto;
-            border: none;
-            border-radius: 4px;
-            color: #fff;
-            cursor: pointer;
-            transition: background 0.2s;
-        }
+    textarea {
+      width: 100%;
+      min-height: 120px;
+      background: #0a0a0a;
+      border: 1px solid #333;
+      border-radius: 4px;
+      padding: 12px;
+      color: #e0e0e0;
+      font-size: 1em;
+      resize: vertical;
+      font-family: inherit;
+    }
+    textarea:focus { outline: none; border-color: #4a9eff; }
 
-        .example-btn:hover { background: #3d4e64; }
+    button {
+      width: 100%;
+      background: #4a9eff;
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+      padding: 12px;
+      font-size: 1em;
+      font-weight: 600;
+      cursor: pointer;
+      margin-top: 15px;
+      transition: background 0.2s;
+    }
+    button:hover { background: #3a8eef; }
+    button:disabled { background: #333; cursor: not-allowed; }
 
-        .char-counter {
-            text-align: right;
-            color: #666;
-            font-size: 0.85em;
-            margin-top: 8px;
-        }
+    .result-section {
+      background: #1a1a1a;
+      border: 1px solid #333;
+      border-radius: 8px;
+      padding: 20px;
+      display: none;
+    }
+    .result-section.show { display: block; }
 
-        .char-counter.warning { color: #ff922b; }
-        .char-counter.good { color: #51cf66; }
+    .result-item {
+      margin-bottom: 20px;
+      padding-bottom: 20px;
+      border-bottom: 1px solid #333;
+    }
+    .result-item:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
 
-        textarea {
-            width: 100%;
-            min-height: 120px;
-            background: #0a0a0a;
-            border: 1px solid #333;
-            border-radius: 4px;
-            padding: 12px;
-            color: #e0e0e0;
-            font-size: 1em;
-            resize: vertical;
-            font-family: inherit;
-        }
+    .result-label {
+      color: #888;
+      font-size: 0.85em;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 8px;
+    }
 
-        textarea:focus { outline: none; border-color: #4a9eff; }
+    .result-value { color: #fff; font-size: 1.05em; }
 
-        button {
-            width: 100%;
-            background: #4a9eff;
-            color: #fff;
-            border: none;
-            border-radius: 4px;
-            padding: 12px;
-            font-size: 1em;
-            font-weight: 600;
-            cursor: pointer;
-            margin-top: 15px;
-            transition: background 0.2s;
-        }
+    .note-box {
+      background: #1a2332;
+      border-left: 3px solid #4a9eff;
+      padding: 12px;
+      margin-top: 12px;
+      color: #88b3ff;
+      font-size: 0.9em;
+      border-radius: 4px;
+    }
 
-        button:hover { background: #3a8eef; }
-        button:disabled { background: #333; cursor: not-allowed; }
+    .tone-badge, .mode-badge {
+      display: inline-block;
+      padding: 4px 12px;
+      border-radius: 12px;
+      font-size: 0.9em;
+      font-weight: 600;
+      margin-right: 8px;
+    }
 
-        .result-section {
-            background: #1a1a1a;
-            border: 1px solid #333;
-            border-radius: 8px;
-            padding: 20px;
-            display: none;
-        }
+    .tone-anxious { background: #ff6b6b; color: #fff; }
+    .tone-cold { background: #4dabf7; color: #fff; }
+    .tone-sharp { background: #ff922b; color: #fff; }
+    .tone-blur { background: #868e96; color: #fff; }
+    .tone-pushy { background: #f783ac; color: #fff; }
+    .tone-unknown { background: #333; color: #888; }
+    .tone-outofscope { background: #7b2cbf; color: #fff; }
 
-        .result-section.show { display: block; }
+    .mode-repair { background: #2f9e44; color: #fff; }
+    .mode-suggest { background: #f08c00; color: #fff; }
+    .mode-no-op { background: #495057; color: #fff; }
 
-        .result-item {
-            margin-bottom: 20px;
-            padding-bottom: 20px;
-            border-bottom: 1px solid #333;
-        }
+    .confidence {
+      display: inline-block;
+      color: #888;
+      font-size: 0.9em;
+      margin-left: 4px;
+    }
+    .confidence.low { color: #ff922b; }
+    .confidence.medium { color: #ffd43b; }
+    .confidence.high { color: #51cf66; }
 
-        .result-item:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+    .error {
+      background: #2d1f1f;
+      border: 1px solid #ff6b6b;
+      border-radius: 4px;
+      padding: 12px;
+      color: #ff6b6b;
+      margin-top: 15px;
+      font-size: 0.9em;
+    }
 
-        .result-label {
-            color: #888;
-            font-size: 0.85em;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            margin-bottom: 8px;
-        }
-
-        .result-value { color: #fff; font-size: 1.05em; }
-
-        .repair-note {
-            background: #1a2332;
-            border-left: 3px solid #4a9eff;
-            padding: 12px;
-            margin-top: 12px;
-            color: #88b3ff;
-            font-size: 0.9em;
-            border-radius: 4px;
-        }
-
-        .tone-badge {
-            display: inline-block;
-            padding: 4px 12px;
-            border-radius: 12px;
-            font-size: 0.9em;
-            font-weight: 600;
-        }
-
-        .tone-anxious { background: #ff6b6b; color: #fff; }
-        .tone-cold { background: #4dabf7; color: #fff; }
-        .tone-sharp { background: #ff922b; color: #fff; }
-        .tone-blur { background: #868e96; color: #fff; }
-        .tone-pushy { background: #f783ac; color: #fff; }
-        .tone-unknown { background: #333; color: #888; }
-        .tone-outofscope { background: #7b2cbf; color: #fff; }
-
-        .confidence {
-            display: inline-block;
-            margin-left: 10px;
-            color: #888;
-            font-size: 0.9em;
-        }
-
-        .confidence.low { color: #ff922b; }
-        .confidence.medium { color: #ffd43b; }
-        .confidence.high { color: #51cf66; }
-
-        .error {
-            background: #2d1f1f;
-            border: 1px solid #ff6b6b;
-            border-radius: 4px;
-            padding: 12px;
-            color: #ff6b6b;
-            margin-top: 15px;
-            font-size: 0.9em;
-        }
-
-        footer {
-            text-align: center;
-            margin-top: 40px;
-            padding-top: 20px;
-            border-top: 1px solid #333;
-            color: #666;
-            font-size: 0.85em;
-        }
-
-        footer a { color: #4a9eff; text-decoration: none; }
-        footer p { margin: 8px 0; }
-    </style>
+    footer {
+      text-align: center;
+      margin-top: 40px;
+      padding-top: 20px;
+      border-top: 1px solid #333;
+      color: #666;
+      font-size: 0.85em;
+    }
+    footer a { color: #4a9eff; text-decoration: none; }
+    footer p { margin: 8px 0; }
+  </style>
 </head>
-<body>
-    <div class="container">
-        <header>
-            <h1>💎 Continuum</h1>
-            <p class="tagline">RIN Protocol — Tone Rhythm Repair Module</p>
-            <div class="notice">
-                <strong>💡 Best Practice:</strong> Enter complete sentences (15+ characters recommended) for accurate tone analysis
-            </div>
-        </header>
 
-        <div class="input-section">
-            <textarea
-                id="inputText"
-                placeholder="Enter a complete sentence for best results (15+ characters recommended)...
+<body>
+<div class="container">
+  <header>
+    <h1>💎 Continuum</h1>
+    <p class="tagline">RIN Protocol — Tone Rhythm Repair Module</p>
+    <div class="notice">
+      <strong>💡 Best Practice:</strong> Enter complete sentences (15+ characters recommended) for accurate tone analysis
+    </div>
+  </header>
+
+  <div class="input-section">
+    <textarea id="inputText"
+      placeholder="Enter a complete sentence for best results (15+ characters recommended)...
 
 Try these examples:
 
@@ -228,191 +221,190 @@ Cold:
 - I understand. Let's focus on what you can control.
 
 Note: Messages under 15 characters may not provide accurate tone analysis."
-            ></textarea>
+    ></textarea>
 
-            <div class="example-buttons">
-                <button type="button" class="example-btn" onclick="loadExample(1)">Anxious Example</button>
-                <button type="button" class="example-btn" onclick="loadExample(2)">Sharp Example</button>
-                <button type="button" class="example-btn" onclick="loadExample(3)">Cold Example</button>
-            </div>
-
-            <div id="charCounter" class="char-counter">0 characters</div>
-            <button id="analyzeBtn" onclick="analyzeText()">Analyze Tone</button>
-            <div id="errorMsg" class="error" style="display:none;"></div>
-        </div>
-
-        <div id="resultSection" class="result-section">
-            <div class="result-item">
-                <div class="result-label">Detected Tone</div>
-                <div class="result-value" id="toneType"></div>
-            </div>
-
-            <div class="result-item">
-                <div class="result-label">Original Text</div>
-                <div class="result-value" id="originalText"></div>
-            </div>
-
-            <div class="result-item">
-                <div class="result-label">Repaired Text</div>
-                <div class="result-value" id="repairedText"></div>
-                <div id="repairNote" class="repair-note" style="display:none;"></div>
-            </div>
-
-            <div class="result-item">
-                <div class="result-label">Scenario</div>
-                <div class="result-value" id="scenario"></div>
-            </div>
-        </div>
-
-        <footer>
-            <p><strong>Continuum</strong> — RIN Protocol | Tone Rhythm Repair Module</p>
-            <p>API: <a href="https://rinnomia-continuum-api.hf.space/docs" target="_blank">rinnomia-continuum-api.hf.space</a></p>
-            <p style="margin-top: 10px; font-size: 0.8em; color: #666;">
-                Best results with full sentences. Short phrases may show limited analysis.
-            </p>
-        </footer>
+    <div class="example-buttons">
+      <button type="button" class="example-btn" onclick="loadExample(1)">Anxious Example</button>
+      <button type="button" class="example-btn" onclick="loadExample(2)">Sharp Example</button>
+      <button type="button" class="example-btn" onclick="loadExample(3)">Cold Example</button>
     </div>
 
-    <script>
-        const API_URL = 'https://rinnomia-continuum-api.hf.space/api/v1/analyze';
+    <div id="charCounter" class="char-counter">0 characters</div>
+    <button id="analyzeBtn" onclick="analyzeText()">Analyze Tone</button>
+    <div id="errorMsg" class="error" style="display:none;"></div>
+  </div>
 
-        const examples = {
-            1: "I've been struggling with this for weeks and nothing seems to help me at all.",
-            2: "Can you just give me a straight answer instead of asking more questions?",
-            3: "I understand. Let's focus on what you can control."
-        };
+  <div id="resultSection" class="result-section">
+    <div class="result-item">
+      <div class="result-label">Decision</div>
+      <div class="result-value" id="decisionLine"></div>
+    </div>
 
-        function loadExample(num) {
-            const inputText = document.getElementById('inputText');
-            const charCounter = document.getElementById('charCounter');
+    <div class="result-item">
+      <div class="result-label">Original Text</div>
+      <div class="result-value" id="originalText"></div>
+    </div>
 
-            inputText.value = examples[num];
-            const count = examples[num].length;
-            charCounter.textContent = `${count} character${count !== 1 ? 's' : ''}`;
-            charCounter.className = 'char-counter good';
-        }
+    <div class="result-item">
+      <div class="result-label" id="outputLabel">Output</div>
+      <div class="result-value" id="outputText"></div>
+      <div id="noteBox" class="note-box" style="display:none;"></div>
+    </div>
 
-        const inputText = document.getElementById('inputText');
-        const charCounter = document.getElementById('charCounter');
+    <div class="result-item">
+      <div class="result-label">Scenario</div>
+      <div class="result-value" id="scenario"></div>
+    </div>
+  </div>
 
-        inputText.addEventListener('input', function() {
-            const count = this.value.trim().length;
-            charCounter.textContent = `${count} character${count !== 1 ? 's' : ''}`;
+  <footer>
+    <p><strong>Continuum</strong> — RIN Protocol | Tone Rhythm Repair Module</p>
+    <p>API: <a href="https://rinnomia-continuum-api.hf.space/docs" target="_blank">rinnomia-continuum-api.hf.space</a></p>
+    <p style="margin-top: 10px; font-size: 0.8em; color: #666;">
+      Best results with full sentences. Short phrases may show limited analysis.
+    </p>
+  </footer>
+</div>
 
-            if (count < 15) {
-                charCounter.className = 'char-counter warning';
-            } else {
-                charCounter.className = 'char-counter good';
-            }
-        });
+<script>
+  const API_URL = 'https://rinnomia-continuum-api.hf.space/api/v1/analyze';
 
-        async function analyzeText() {
-            const inputText = document.getElementById('inputText').value.trim();
-            const analyzeBtn = document.getElementById('analyzeBtn');
-            const resultSection = document.getElementById('resultSection');
+  const examples = {
+    1: "I've been struggling with this for weeks and nothing seems to help me at all.",
+    2: "Can you just give me a straight answer instead of asking more questions?",
+    3: "I understand. Let's focus on what you can control."
+  };
 
-            errorMsg.style.display = 'none';
-            resultSection.classList.remove('show');
+  function loadExample(num) {
+    const el = document.getElementById('inputText');
+    el.value = examples[num];
+    updateCounter();
+  }
 
-            if (!inputText) {
-                showError('Please enter text to analyze');
-                return;
-            }
+  const inputEl = document.getElementById('inputText');
+  inputEl.addEventListener('input', updateCounter);
 
-            analyzeBtn.disabled = true;
-            analyzeBtn.textContent = 'Analyzing...';
+  function updateCounter() {
+    const count = inputEl.value.trim().length;
+    const counter = document.getElementById('charCounter');
+    counter.textContent = `${count} character${count !== 1 ? 's' : ''}`;
+    counter.className = (count < 15) ? 'char-counter warning' : 'char-counter good';
+  }
 
-            try {
-                const response = await fetch(API_URL, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ text: inputText })
-                });
+  async function analyzeText() {
+    const text = inputEl.value.trim();
+    const analyzeBtn = document.getElementById('analyzeBtn');
+    const resultSection = document.getElementById('resultSection');
+    const errorMsg = document.getElementById('errorMsg');
 
-                if (!response.ok) {
-                    throw new Error(`API error: ${response.status}`);
-                }
+    errorMsg.style.display = 'none';
+    resultSection.classList.remove('show');
 
-                const data = await response.json();
-                displayResults(data);
+    if (!text) return showError('Please enter text to analyze');
 
-            } catch (error) {
-                showError(`Analysis failed: ${error.message}`);
-            } finally {
-                analyzeBtn.disabled = false;
-                analyzeBtn.textContent = 'Analyze Tone';
-            }
-        }
+    analyzeBtn.disabled = true;
+    analyzeBtn.textContent = 'Analyzing...';
 
-        function displayResults(data) {
-            const toneTypeEl = document.getElementById('toneType');
-            const originalTextEl = document.getElementById('originalText');
-            const repairedTextEl = document.getElementById('repairedText');
-            const repairNoteEl = document.getElementById('repairNote');
-            const scenarioEl = document.getElementById('scenario');
-            const resultSection = document.getElementById('resultSection');
+    try {
+      const response = await fetch(API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text })
+      });
 
-            const freq = (data.freq_type || 'Unknown');
-            const freqLower = freq.toLowerCase();
+      if (!response.ok) throw new Error(`API error: ${response.status}`);
 
-            // Tone badge
-            const toneClass = `tone-${freqLower}`;
-            const confidencePercent = ((data.confidence || 0) * 100).toFixed(0);
+      const data = await response.json();
+      displayResults(data);
 
-            let confidenceClass = 'confidence';
-            if ((data.confidence || 0) >= 0.7) confidenceClass += ' high';
-            else if ((data.confidence || 0) >= 0.4) confidenceClass += ' medium';
-            else confidenceClass += ' low';
+    } catch (err) {
+      showError(`Analysis failed: ${err.message}`);
+    } finally {
+      analyzeBtn.disabled = false;
+      analyzeBtn.textContent = 'Analyze Tone';
+    }
+  }
 
-            toneTypeEl.innerHTML = `
-                <span class="tone-badge ${toneClass}">${freq}</span>
-                <span class="${confidenceClass}">${confidencePercent}% confidence</span>
-            `;
+  function displayResults(data) {
+    const resultSection = document.getElementById('resultSection');
 
-            originalTextEl.textContent = data.original || '';
+    const decisionLine = document.getElementById('decisionLine');
+    const originalTextEl = document.getElementById('originalText');
+    const outputLabel = document.getElementById('outputLabel');
+    const outputText = document.getElementById('outputText');
+    const noteBox = document.getElementById('noteBox');
+    const scenarioEl = document.getElementById('scenario');
 
-            // ✅ OutOfScope UI behavior
-            if (freq === 'OutOfScope') {
-                repairedTextEl.textContent = '—';
-                repairNoteEl.textContent = data.repair_note || 'Out of scope: crisis/self-harm content is not processed by Continuum.';
-                repairNoteEl.style.display = 'block';
+    const freq = (data.freq_type || 'Unknown');
+    const freqLower = freq.toLowerCase();
 
-                scenarioEl.textContent = 'Out-of-scope (crisis safety boundary)';
-                resultSection.classList.add('show');
-                return;
-            }
+    // mode (new API), fallback if old API
+    let mode = data.mode;
+    if (!mode) {
+      // fallback heuristic:
+      if (freq === 'Unknown') mode = 'no-op';
+      else if (data.repaired_text && data.original && data.repaired_text !== data.original) mode = 'repair';
+      else mode = 'suggest';
+    }
 
-            // Normal behavior
-            if (data.repaired_text && data.repaired_text !== data.original) {
-                repairedTextEl.textContent = data.repaired_text;
-            } else {
-                repairedTextEl.textContent = 'No repair needed';
-            }
+    const modeLower = String(mode).toLowerCase();
 
-            scenarioEl.textContent = data.scenario || 'Unclassified';
+    const confFinal = (data.confidence_final !== undefined) ? data.confidence_final : (data.confidence || 0);
+    const confPercent = (confFinal * 100).toFixed(0);
 
-            if (data.repair_note) {
-                repairNoteEl.textContent = data.repair_note;
-                repairNoteEl.style.display = 'block';
-            } else {
-                repairNoteEl.style.display = 'none';
-            }
+    let confClass = 'confidence';
+    if (confFinal >= 0.7) confClass += ' high';
+    else if (confFinal >= 0.4) confClass += ' medium';
+    else confClass += ' low';
 
-            resultSection.classList.add('show');
-        }
+    decisionLine.innerHTML = `
+      <span class="tone-badge tone-${freqLower}">${freq}</span>
+      <span class="mode-badge mode-${modeLower}">${modeLower.toUpperCase()}</span>
+      <span class="${confClass}">${confPercent}% confidence</span>
+    `;
 
-        function showError(message) {
-            const errorMsg = document.getElementById('errorMsg');
-            errorMsg.textContent = message;
-            errorMsg.style.display = 'block';
-        }
+    originalTextEl.textContent = data.original || '';
 
-        document.getElementById('inputText').addEventListener('keydown', function(e) {
-            if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                analyzeText();
-            }
-        });
-    </script>
+    // Scenario
+    scenarioEl.textContent = data.scenario || 'Unclassified';
+
+    // Note
+    if (data.repair_note) {
+      noteBox.textContent = data.repair_note;
+      noteBox.style.display = 'block';
+    } else {
+      noteBox.style.display = 'none';
+    }
+
+    // Output rendering by mode
+    if (modeLower === 'repair') {
+      outputLabel.textContent = 'Repaired Text';
+      outputText.textContent = data.repaired_text || '(no repaired text returned)';
+    } else if (modeLower === 'suggest') {
+      outputLabel.textContent = 'Suggestion Output';
+      outputText.textContent = data.repaired_text || '(no suggestion returned)';
+    } else {
+      outputLabel.textContent = 'Transparent Pass-through';
+      outputText.textContent = data.original || '';
+    }
+
+    resultSection.classList.add('show');
+  }
+
+  function showError(message) {
+    const errorMsg = document.getElementById('errorMsg');
+    errorMsg.textContent = message;
+    errorMsg.style.display = 'block';
+  }
+
+  document.getElementById('inputText').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      analyzeText();
+    }
+  });
+
+  updateCounter();
+</script>
 </body>
 </html>
