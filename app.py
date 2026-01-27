@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 from typing import Optional
 import logging
 import os
+import math
 
 from pipeline.z1_pipeline import Z1Pipeline
 from logger import DataLogger, GitHubBackup
@@ -50,6 +51,36 @@ def _get_github_env():
     token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
     repo = os.environ.get("GITHUB_REPO") or os.environ.get("GH_REPO")
     return token, repo
+
+
+def _normalize_mode(m: Optional[str]) -> str:
+    """
+    Final safety normalize for API contract.
+    Output only: "repair" | "suggest" | "no-op"
+    """
+    if not isinstance(m, str):
+        return "suggest"
+    ml = m.strip().lower()
+    if ml in {"repair", "suggest", "no-op"}:
+        return ml
+    if ml in {"noop", "no_op", "no op", "pass", "passthrough", "pass-through"}:
+        return "no-op"
+    if ml in {"fix", "rewrite"}:
+        return "repair"
+    return "suggest"
+
+
+def _safe_conf(v, default: float = 0.0) -> float:
+    """
+    Prevent NaN/inf from leaking to frontend.
+    """
+    try:
+        x = float(v)
+        if math.isnan(x) or math.isinf(x):
+            return float(default)
+        return max(0.0, min(1.0, x))
+    except Exception:
+        return float(default)
 
 
 @app.on_event("startup")
@@ -152,15 +183,15 @@ async def analyze(request: AnalyzeRequest):
         freq_type = result.get("freq_type", "Unknown")
 
         conf_obj = result.get("confidence") or {}
-        confidence_final = float(conf_obj.get("final", 0.0))
+        confidence_final = _safe_conf(conf_obj.get("final", 0.0), default=0.0)
 
-        # cls_conf may be stored in different keys; keep robust
         confidence_classifier = conf_obj.get("classifier", None)
         if confidence_classifier is not None:
-            confidence_classifier = float(confidence_classifier)
+            confidence_classifier = _safe_conf(confidence_classifier, default=0.0)
 
         # mode should be produced by pipeline after router step
         mode = result.get("mode") or (result.get("output") or {}).get("mode") or "suggest"
+        mode = _normalize_mode(mode)
 
         out_obj = result.get("output") or {}
         scenario = out_obj.get("scenario", "unknown")
@@ -170,7 +201,6 @@ async def analyze(request: AnalyzeRequest):
         # ✅ enforce transparent pass-through for no-op
         if mode == "no-op":
             repaired_text = result.get("original", request.text)
-            # keep repair_note if pipeline already gave one; otherwise provide minimal
             if not repair_note:
                 repair_note = "Tone is already within a safe range. Transparent pass-through."
 
