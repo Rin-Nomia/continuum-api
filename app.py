@@ -6,7 +6,7 @@ Tone rhythm detection and repair API
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Optional, Dict, Any
 import logging
 import os
 import math
@@ -138,13 +138,17 @@ class AnalyzeResponse(BaseModel):
     # ✅ standardized decision
     mode: str  # "repair" | "suggest" | "no-op"
 
-    # ✅ standardized confidence
+    # ✅ standardized confidence (backend truth)
     confidence_final: float
     confidence_classifier: Optional[float] = None
 
     scenario: str
     repaired_text: Optional[str] = None
     repair_note: Optional[str] = None
+
+    # ✅ UI summary payload for frontend badges
+    ui: Optional[Dict[str, Any]] = None
+
     log_id: Optional[str] = None
 
 
@@ -197,6 +201,7 @@ async def analyze(request: AnalyzeRequest):
         scenario = out_obj.get("scenario", "unknown")
         repaired_text = out_obj.get("repaired_text")
         repair_note = out_obj.get("repair_note")
+        ui = out_obj.get("ui")
 
         # ✅ enforce transparent pass-through for no-op
         if mode == "no-op":
@@ -233,6 +238,7 @@ async def analyze(request: AnalyzeRequest):
             scenario=scenario,
             repaired_text=repaired_text,
             repair_note=repair_note,
+            ui=ui,
             log_id=log_id,
         )
 
