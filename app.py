@@ -10,6 +10,8 @@ from typing import Optional, Dict, Any
 import logging
 import os
 import math
+import time
+from datetime import datetime, timezone
 
 from pipeline.z1_pipeline import Z1Pipeline
 from logger import DataLogger, GitHubBackup
@@ -83,6 +85,10 @@ def _safe_conf(v, default: float = 0.0) -> float:
         return float(default)
 
 
+def _utc_now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
 @app.on_event("startup")
 async def startup_event():
     global pipeline, data_logger, github_backup
@@ -149,6 +155,9 @@ class AnalyzeResponse(BaseModel):
     # ✅ UI summary payload for frontend badges
     ui: Optional[Dict[str, Any]] = None
 
+    # ✅ audit payload (verifiable, no fake numbers)
+    audit: Optional[Dict[str, Any]] = None
+
     log_id: Optional[str] = None
 
 
@@ -178,6 +187,8 @@ async def analyze(request: AnalyzeRequest):
     if not pipeline:
         raise HTTPException(503, "Pipeline not ready")
 
+    t0 = time.time()
+
     try:
         result = pipeline.process(request.text)
 
@@ -194,8 +205,8 @@ async def analyze(request: AnalyzeRequest):
             confidence_classifier = _safe_conf(confidence_classifier, default=0.0)
 
         # mode should be produced by pipeline after router step
-        mode = result.get("mode") or (result.get("output") or {}).get("mode") or "suggest"
-        mode = _normalize_mode(mode)
+        mode_raw = result.get("mode") or (result.get("output") or {}).get("mode") or "suggest"
+        mode = _normalize_mode(mode_raw)
 
         out_obj = result.get("output") or {}
         scenario = out_obj.get("scenario", "unknown")
@@ -204,10 +215,45 @@ async def analyze(request: AnalyzeRequest):
         ui = out_obj.get("ui")
 
         # ✅ enforce transparent pass-through for no-op
+        pass_through = False
         if mode == "no-op":
+            pass_through = True
             repaired_text = result.get("original", request.text)
             if not repair_note:
                 repair_note = "Tone is already within a safe range. Transparent pass-through."
+
+        # ---- Optional audit extraction (safe, only if pipeline provides) ----
+        # We DO NOT expose llm_raw_response.
+        model_name = out_obj.get("model") or result.get("model") or ""
+        usage = out_obj.get("usage") or result.get("usage") or {}
+        cache_hit = out_obj.get("cache_hit") if "cache_hit" in out_obj else result.get("cache_hit", None)
+        llm_used = out_obj.get("llm_used") if "llm_used" in out_obj else result.get("llm_used", None)
+
+        latency_ms = int((time.time() - t0) * 1000)
+
+        audit = {
+            # verifiable timestamps
+            "server_time_utc": _utc_now_iso(),
+            "latency_ms": latency_ms,
+
+            # contract truth
+            "mode_raw": str(mode_raw),
+            "mode_normalized": mode,
+            "pass_through": pass_through,
+
+            # core signals already computed in this file
+            "confidence_final": confidence_final,
+            "confidence_classifier": confidence_classifier,
+            "freq_type": freq_type,
+            "scenario": scenario,
+            "text_length": len(request.text),
+
+            # optional (only if provided by pipeline/repairer)
+            "llm_used": llm_used,
+            "cache_hit": cache_hit,
+            "model": model_name,
+            "usage": usage if isinstance(usage, dict) else {},
+        }
 
         # Log analysis (never break API)
         log_id = None
@@ -223,11 +269,15 @@ async def analyze(request: AnalyzeRequest):
                         "mode": mode,
                         "text_length": len(request.text),
                         "scenario": scenario,
+                        "latency_ms": latency_ms,
                     },
                 )
                 log_id = log.get("timestamp")
             except Exception as log_error:
                 logger.warning(f"⚠️ Logging failed: {log_error}")
+
+        # Attach log_id into audit for traceability
+        audit["log_id"] = log_id
 
         return AnalyzeResponse(
             original=result.get("original", request.text),
@@ -239,6 +289,7 @@ async def analyze(request: AnalyzeRequest):
             repaired_text=repaired_text,
             repair_note=repair_note,
             ui=ui,
+            audit=audit,
             log_id=log_id,
         )
 
