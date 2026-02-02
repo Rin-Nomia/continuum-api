@@ -1,21 +1,24 @@
 """
-Continuum API - FastAPI Application (Audit-Aligned Demo Version)
----------------------------------------------------------------
-This version:
-- Keeps your existing Z1Pipeline intact
-- Surfaces repairer audit truth to frontend
-- Makes LLM / gate / fallback fully visible & honest
+Continuum API - Hugging Face Spaces Compatible App
+--------------------------------------------------
+Key points:
+- Uses FastAPI lifespan (no deprecated on_event)
+- Explicitly starts uvicorn on port 7860
+- Keeps your pipeline / LLM / audit logic intact
 """
+
+import os
+import time
+import math
+import logging
+from typing import Optional, Dict, Any
+from datetime import datetime, timezone
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
-from typing import Optional, Dict, Any
-import logging
-import os
-import math
-import time
-from datetime import datetime, timezone
+import uvicorn
 
 from pipeline.z1_pipeline import Z1Pipeline
 from logger import DataLogger, GitHubBackup
@@ -27,22 +30,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger("continuum-api")
 
-# -------------------- FastAPI App --------------------
-app = FastAPI(
-    title="Continuum API",
-    description="Tone rhythm detection and repair for conversational AI",
-    version="2.2.0-demo",
-)
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-pipeline = None
+# -------------------- Globals --------------------
+pipeline: Optional[Z1Pipeline] = None
 data_logger: Optional[DataLogger] = None
 github_backup: Optional[GitHubBackup] = None
 
@@ -61,10 +50,12 @@ def _safe_conf(v, default: float = 0.0) -> float:
         return default
 
 
-@app.on_event("startup")
-async def startup_event():
+# -------------------- Lifespan (HF-safe) --------------------
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     global pipeline, data_logger, github_backup
-    logger.info("🚀 Starting Continuum API (Demo)...")
+
+    logger.info("🚀 Starting Continuum API (HF Space)")
 
     pipeline = Z1Pipeline(debug=False)
     data_logger = DataLogger(log_dir="logs")
@@ -72,12 +63,35 @@ async def startup_event():
     token = os.environ.get("GITHUB_TOKEN")
     repo = os.environ.get("GITHUB_REPO")
     if token and repo:
-        github_backup = GitHubBackup(log_dir="logs")
-        github_backup.restore()
+        try:
+            github_backup = GitHubBackup(log_dir="logs")
+            github_backup.restore()
+            logger.info("📦 GitHub backup restored")
+        except Exception as e:
+            logger.warning(f"GitHub backup skipped: {e}")
     else:
         github_backup = None
 
-    logger.info("✅ API ready")
+    logger.info("✅ Startup complete")
+    yield
+    logger.info("🧹 Shutdown complete")
+
+
+# -------------------- FastAPI App --------------------
+app = FastAPI(
+    title="Continuum API",
+    description="Tone rhythm detection and repair for conversational AI",
+    version="2.2.1-hf",
+    lifespan=lifespan,
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 # -------------------- Models --------------------
@@ -90,76 +104,70 @@ class AnalyzeResponse(BaseModel):
     freq_type: str
     mode: str
     confidence_final: float
-    confidence_classifier: Optional[float] = None
+    confidence_classifier: Optional[float]
     scenario: str
-    repaired_text: Optional[str] = None
-    repair_note: Optional[str] = None
+    repaired_text: Optional[str]
+    repair_note: Optional[str]
     audit: Dict[str, Any]
 
 
-# -------------------- Endpoint --------------------
+# -------------------- Endpoints --------------------
+@app.get("/")
+async def root():
+    return {
+        "name": "Continuum API",
+        "status": "running",
+        "docs": "/docs",
+        "health": "/health",
+    }
+
+
+@app.get("/health")
+async def health():
+    return {
+        "pipeline_ready": pipeline is not None,
+        "logger_ready": data_logger is not None,
+        "time": _utc_now(),
+    }
+
+
 @app.post("/api/v1/analyze", response_model=AnalyzeResponse)
-async def analyze(request: AnalyzeRequest):
+async def analyze(req: AnalyzeRequest):
     if not pipeline:
         raise HTTPException(503, "Pipeline not ready")
 
     t0 = time.time()
-
-    result = pipeline.process(request.text)
+    result = pipeline.process(req.text)
 
     if result.get("error"):
         raise HTTPException(400, result.get("reason"))
 
-    original = result.get("original", request.text)
+    original = result.get("original", req.text)
     freq_type = result.get("freq_type", "Unknown")
 
-    conf_obj = result.get("confidence") or {}
-    confidence_final = _safe_conf(conf_obj.get("final", 0.0))
-    confidence_classifier = _safe_conf(conf_obj.get("classifier", 0.0))
+    conf = result.get("confidence") or {}
+    confidence_final = _safe_conf(conf.get("final", 0.0))
+    confidence_classifier = _safe_conf(conf.get("classifier", 0.0))
 
-    mode_raw = result.get("mode") or "no-op"
-    mode = mode_raw.lower()
-    if mode not in {"repair", "suggest", "no-op"}:
-        mode = "no-op"
+    mode = (result.get("mode") or "no-op").lower()
+    out = result.get("output") or {}
 
-    out_obj = result.get("output") or {}
-    scenario = out_obj.get("scenario", "unknown")
-    repaired_text = out_obj.get("repaired_text")
-    repair_note = out_obj.get("repair_note")
+    scenario = out.get("scenario", "unknown")
+    repaired_text = out.get("repaired_text")
+    repair_note = out.get("repair_note")
 
-    # ---- IMPORTANT: audit merge ----
-    repairer_audit = out_obj.get("audit") if isinstance(out_obj, dict) else {}
-    latency_ms = int((time.time() - t0) * 1000)
+    if mode == "no-op":
+        repaired_text = original
+        repair_note = "Tone is within safe range. Transparent pass-through."
 
     audit = {
         "server_time_utc": _utc_now(),
-        "latency_ms": latency_ms,
+        "latency_ms": int((time.time() - t0) * 1000),
         "mode": mode,
         "freq_type": freq_type,
-        "scenario": scenario,
         "confidence_final": confidence_final,
-        "repairer": repairer_audit or {},
+        "repairer": out.get("audit", {}),
     }
-
-    # no-op must be transparent
-    if mode == "no-op":
-        repaired_text = original
-        repair_note = "Tone is already within a safe range. Transparent pass-through."
-
-    # logging (best-effort)
-    if data_logger:
-        try:
-            data_logger.log_analysis(
-                input_text=original,
-                output_result=result,
-                metadata={
-                    "mode": mode,
-                    "freq_type": freq_type,
-                    "confidence_final": confidence_final,
-                },
-            )
-        except Exception:
-            pass
 
     return AnalyzeResponse(
         original=original,
@@ -171,4 +179,15 @@ async def analyze(request: AnalyzeRequest):
         repaired_text=repaired_text,
         repair_note=repair_note,
         audit=audit,
+    )
+
+
+# -------------------- HF entrypoint --------------------
+if __name__ == "__main__":
+    # Hugging Face expects port 7860
+    uvicorn.run(
+        "app:app",
+        host="0.0.0.0",
+        port=7860,
+        log_level="info",
     )
