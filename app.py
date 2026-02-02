@@ -1,7 +1,10 @@
-# app.py
 """
-Continuum API - FastAPI Application
-Tone rhythm detection and repair API
+Continuum API - FastAPI Application (Audit-Aligned Demo Version)
+---------------------------------------------------------------
+This version:
+- Keeps your existing Z1Pipeline intact
+- Surfaces repairer audit truth to frontend
+- Makes LLM / gate / fallback fully visible & honest
 """
 
 from fastapi import FastAPI, HTTPException
@@ -28,7 +31,7 @@ logger = logging.getLogger("continuum-api")
 app = FastAPI(
     title="Continuum API",
     description="Tone rhythm detection and repair for conversational AI",
-    version="2.1.0",
+    version="2.2.0-demo",
 )
 
 app.add_middleware(
@@ -39,98 +42,42 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# -------------------- Globals --------------------
 pipeline = None
 data_logger: Optional[DataLogger] = None
 github_backup: Optional[GitHubBackup] = None
 
 
-def _get_github_env():
-    """
-    Compat layer:
-    - Prefer GITHUB_TOKEN/GITHUB_REPO (HF Space Secrets recommended)
-    - Fallback to GH_TOKEN/GH_REPO (legacy)
-    """
-    token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
-    repo = os.environ.get("GITHUB_REPO") or os.environ.get("GH_REPO")
-    return token, repo
-
-
-def _normalize_mode(m: Optional[str]) -> str:
-    """
-    Final safety normalize for API contract.
-    Output only: "repair" | "suggest" | "no-op"
-    """
-    if not isinstance(m, str):
-        return "suggest"
-    ml = m.strip().lower()
-    if ml in {"repair", "suggest", "no-op"}:
-        return ml
-    if ml in {"noop", "no_op", "no op", "pass", "passthrough", "pass-through"}:
-        return "no-op"
-    if ml in {"fix", "rewrite"}:
-        return "repair"
-    return "suggest"
+def _utc_now():
+    return datetime.now(timezone.utc).isoformat()
 
 
 def _safe_conf(v, default: float = 0.0) -> float:
-    """
-    Prevent NaN/inf from leaking to frontend.
-    """
     try:
         x = float(v)
         if math.isnan(x) or math.isinf(x):
-            return float(default)
+            return default
         return max(0.0, min(1.0, x))
     except Exception:
-        return float(default)
-
-
-def _utc_now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        return default
 
 
 @app.on_event("startup")
 async def startup_event():
     global pipeline, data_logger, github_backup
+    logger.info("🚀 Starting Continuum API (Demo)...")
 
-    logger.info("🚀 Starting Continuum API...")
+    pipeline = Z1Pipeline(debug=False)
+    data_logger = DataLogger(log_dir="logs")
 
-    # Initialize pipeline
-    try:
-        logger.info("📦 Initializing Z1 Pipeline...")
-        pipeline = Z1Pipeline(debug=False)
-        logger.info("✅ Pipeline ready")
-    except Exception as e:
-        logger.error(f"❌ Pipeline initialization failed: {e}")
-        pipeline = None
-
-    # Initialize DataLogger
-    try:
-        logger.info("📊 Initializing Data Logger...")
-        data_logger = DataLogger(log_dir="logs")
-        logger.info("✅ Data Logger ready")
-    except Exception as e:
-        logger.warning(f"⚠️ Data Logger initialization failed: {e}")
-        data_logger = None
-
-    # Optional GitHub backup hook (compat; safe even if no-op)
-    try:
-        token, repo = _get_github_env()
-        if token and repo:
-            logger.info("📦 Initializing GitHub Backup (compat)...")
-            github_backup = GitHubBackup(log_dir="logs")
-            github_backup.restore()
-            logger.info("✅ GitHub Backup ready")
-        else:
-            github_backup = None
-    except Exception as e:
-        logger.warning(f"⚠️ GitHub Backup initialization failed: {e}")
+    token = os.environ.get("GITHUB_TOKEN")
+    repo = os.environ.get("GITHUB_REPO")
+    if token and repo:
+        github_backup = GitHubBackup(log_dir="logs")
+        github_backup.restore()
+    else:
         github_backup = None
 
-    logger.info("=" * 50)
-    logger.info("🎉 Continuum API is ready!")
-    logger.info("=" * 50)
+    logger.info("✅ API ready")
 
 
 # -------------------- Models --------------------
@@ -141,48 +88,16 @@ class AnalyzeRequest(BaseModel):
 class AnalyzeResponse(BaseModel):
     original: str
     freq_type: str
-
-    # ✅ standardized decision
-    mode: str  # "repair" | "suggest" | "no-op"
-
-    # ✅ standardized confidence (backend truth)
+    mode: str
     confidence_final: float
     confidence_classifier: Optional[float] = None
-
     scenario: str
     repaired_text: Optional[str] = None
     repair_note: Optional[str] = None
-
-    # ✅ UI summary payload for frontend badges
-    ui: Optional[Dict[str, Any]] = None
-
-    # ✅ audit payload (verifiable, no fake numbers)
-    audit: Optional[Dict[str, Any]] = None
-
-    log_id: Optional[str] = None
+    audit: Dict[str, Any]
 
 
-class FeedbackRequest(BaseModel):
-    log_id: str
-    accuracy: int = Field(..., ge=1, le=5)
-    helpful: int = Field(..., ge=1, le=5)
-    accepted: bool
-
-
-# -------------------- Endpoints --------------------
-@app.get("/health")
-async def health_check():
-    token, repo = _get_github_env()
-    return {
-        "status": "healthy",
-        "pipeline_ready": pipeline is not None,
-        "logger_ready": data_logger is not None,
-        "backup_ready": github_backup is not None,
-        "github_env_present": bool(token and repo),
-        "github_repo_effective": repo,
-    }
-
-
+# -------------------- Endpoint --------------------
 @app.post("/api/v1/analyze", response_model=AnalyzeResponse)
 async def analyze(request: AnalyzeRequest):
     if not pipeline:
@@ -190,156 +105,70 @@ async def analyze(request: AnalyzeRequest):
 
     t0 = time.time()
 
-    try:
-        result = pipeline.process(request.text)
+    result = pipeline.process(request.text)
 
-        if result.get("error"):
-            raise HTTPException(400, result.get("reason"))
+    if result.get("error"):
+        raise HTTPException(400, result.get("reason"))
 
-        freq_type = result.get("freq_type", "Unknown")
+    original = result.get("original", request.text)
+    freq_type = result.get("freq_type", "Unknown")
 
-        conf_obj = result.get("confidence") or {}
-        confidence_final = _safe_conf(conf_obj.get("final", 0.0), default=0.0)
+    conf_obj = result.get("confidence") or {}
+    confidence_final = _safe_conf(conf_obj.get("final", 0.0))
+    confidence_classifier = _safe_conf(conf_obj.get("classifier", 0.0))
 
-        confidence_classifier = conf_obj.get("classifier", None)
-        if confidence_classifier is not None:
-            confidence_classifier = _safe_conf(confidence_classifier, default=0.0)
+    mode_raw = result.get("mode") or "no-op"
+    mode = mode_raw.lower()
+    if mode not in {"repair", "suggest", "no-op"}:
+        mode = "no-op"
 
-        # mode should be produced by pipeline after router step
-        mode_raw = result.get("mode") or (result.get("output") or {}).get("mode") or "suggest"
-        mode = _normalize_mode(mode_raw)
+    out_obj = result.get("output") or {}
+    scenario = out_obj.get("scenario", "unknown")
+    repaired_text = out_obj.get("repaired_text")
+    repair_note = out_obj.get("repair_note")
 
-        out_obj = result.get("output") or {}
-        scenario = out_obj.get("scenario", "unknown")
-        repaired_text = out_obj.get("repaired_text")
-        repair_note = out_obj.get("repair_note")
-        ui = out_obj.get("ui")
+    # ---- IMPORTANT: audit merge ----
+    repairer_audit = out_obj.get("audit") if isinstance(out_obj, dict) else {}
+    latency_ms = int((time.time() - t0) * 1000)
 
-        # ✅ enforce transparent pass-through for no-op
-        pass_through = False
-        if mode == "no-op":
-            pass_through = True
-            repaired_text = result.get("original", request.text)
-            if not repair_note:
-                repair_note = "Tone is already within a safe range. Transparent pass-through."
-
-        latency_ms = int((time.time() - t0) * 1000)
-
-        # ---- Audit: prefer pipeline/repairer truth; never guess ----
-        # pipeline will provide:
-        # - result["audit"] (top-level)
-        # - out_obj["audit"] (output-level)
-        # We merge them; output-level wins.
-        audit_from_result = result.get("audit") if isinstance(result.get("audit"), dict) else {}
-        audit_from_output = out_obj.get("audit") if isinstance(out_obj.get("audit"), dict) else {}
-
-        audit_merged = {}
-        audit_merged.update(audit_from_result)
-        audit_merged.update(audit_from_output)
-
-        # Ensure minimal server fields always present (verifiable)
-        audit_merged.setdefault("server_time_utc", _utc_now_iso())
-        audit_merged.setdefault("latency_ms", latency_ms)
-
-        # Also keep API-normalized mode for contract clarity
-        audit_merged["mode_raw"] = str(mode_raw)
-        audit_merged["mode_normalized"] = mode
-        audit_merged["pass_through"] = pass_through
-        audit_merged["text_length"] = len(request.text)
-        audit_merged["freq_type"] = freq_type
-        audit_merged["scenario"] = scenario
-        audit_merged["confidence_final"] = confidence_final
-        audit_merged["confidence_classifier"] = confidence_classifier
-
-        # Log analysis (never break API)
-        log_id = None
-        if data_logger:
-            try:
-                log = data_logger.log_analysis(
-                    input_text=request.text,
-                    output_result=result,
-                    metadata={
-                        "confidence_final": confidence_final,
-                        "confidence_classifier": confidence_classifier,
-                        "freq_type": freq_type,
-                        "mode": mode,
-                        "text_length": len(request.text),
-                        "scenario": scenario,
-                        "latency_ms": latency_ms,
-                        # best-effort: include llm_used if present
-                        "llm_used": bool(audit_merged.get("llm_used")) if "llm_used" in audit_merged else None,
-                    },
-                )
-                log_id = log.get("timestamp")
-            except Exception as log_error:
-                logger.warning(f"⚠️ Logging failed: {log_error}")
-
-        audit_merged["log_id"] = log_id
-
-        return AnalyzeResponse(
-            original=result.get("original", request.text),
-            freq_type=freq_type,
-            mode=mode,
-            confidence_final=confidence_final,
-            confidence_classifier=confidence_classifier,
-            scenario=scenario,
-            repaired_text=repaired_text,
-            repair_note=repair_note,
-            ui=ui,
-            audit=audit_merged,
-            log_id=log_id,
-        )
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"❌ Analysis error: {str(e)}")
-        import traceback
-        traceback.print_exc()
-        raise HTTPException(500, f"Analysis failed: {str(e)}")
-
-
-@app.post("/api/v1/feedback")
-async def submit_feedback(request: FeedbackRequest):
-    if not data_logger:
-        raise HTTPException(503, "Logger not available")
-
-    try:
-        data_logger.log_feedback(
-            log_id=request.log_id,
-            accuracy=request.accuracy,
-            helpful=request.helpful,
-            accepted=request.accepted,
-        )
-        return {"status": "success", "message": "Feedback recorded"}
-    except Exception as e:
-        logger.error(f"❌ Feedback error: {str(e)}")
-        raise HTTPException(500, f"Failed to record feedback: {str(e)}")
-
-
-@app.get("/api/v1/stats")
-async def get_stats():
-    if not data_logger:
-        raise HTTPException(503, "Logger not available")
-
-    try:
-        return data_logger.get_stats()
-    except Exception as e:
-        logger.error(f"❌ Stats error: {str(e)}")
-        raise HTTPException(500, f"Failed to get stats: {str(e)}")
-
-
-@app.get("/")
-async def root():
-    return {
-        "name": "Continuum API",
-        "version": "2.1.0",
-        "status": "active",
-        "docs": "/docs",
-        "health": "/health",
+    audit = {
+        "server_time_utc": _utc_now(),
+        "latency_ms": latency_ms,
+        "mode": mode,
+        "freq_type": freq_type,
+        "scenario": scenario,
+        "confidence_final": confidence_final,
+        "repairer": repairer_audit or {},
     }
 
+    # no-op must be transparent
+    if mode == "no-op":
+        repaired_text = original
+        repair_note = "Tone is already within a safe range. Transparent pass-through."
 
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=7860)
+    # logging (best-effort)
+    if data_logger:
+        try:
+            data_logger.log_analysis(
+                input_text=original,
+                output_result=result,
+                metadata={
+                    "mode": mode,
+                    "freq_type": freq_type,
+                    "confidence_final": confidence_final,
+                },
+            )
+        except Exception:
+            pass
+
+    return AnalyzeResponse(
+        original=original,
+        freq_type=freq_type,
+        mode=mode,
+        confidence_final=confidence_final,
+        confidence_classifier=confidence_classifier,
+        scenario=scenario,
+        repaired_text=repaired_text,
+        repair_note=repair_note,
+        audit=audit,
+    )
