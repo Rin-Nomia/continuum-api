@@ -1,3 +1,4 @@
+# app.py
 """
 Continuum API - FastAPI Application
 Tone rhythm detection and repair API
@@ -222,38 +223,33 @@ async def analyze(request: AnalyzeRequest):
             if not repair_note:
                 repair_note = "Tone is already within a safe range. Transparent pass-through."
 
-        # ---- Optional audit extraction (safe, only if pipeline provides) ----
-        # We DO NOT expose llm_raw_response.
-        model_name = out_obj.get("model") or result.get("model") or ""
-        usage = out_obj.get("usage") or result.get("usage") or {}
-        cache_hit = out_obj.get("cache_hit") if "cache_hit" in out_obj else result.get("cache_hit", None)
-        llm_used = out_obj.get("llm_used") if "llm_used" in out_obj else result.get("llm_used", None)
-
         latency_ms = int((time.time() - t0) * 1000)
 
-        audit = {
-            # verifiable timestamps
-            "server_time_utc": _utc_now_iso(),
-            "latency_ms": latency_ms,
+        # ---- Audit: prefer pipeline/repairer truth; never guess ----
+        # pipeline will provide:
+        # - result["audit"] (top-level)
+        # - out_obj["audit"] (output-level)
+        # We merge them; output-level wins.
+        audit_from_result = result.get("audit") if isinstance(result.get("audit"), dict) else {}
+        audit_from_output = out_obj.get("audit") if isinstance(out_obj.get("audit"), dict) else {}
 
-            # contract truth
-            "mode_raw": str(mode_raw),
-            "mode_normalized": mode,
-            "pass_through": pass_through,
+        audit_merged = {}
+        audit_merged.update(audit_from_result)
+        audit_merged.update(audit_from_output)
 
-            # core signals already computed in this file
-            "confidence_final": confidence_final,
-            "confidence_classifier": confidence_classifier,
-            "freq_type": freq_type,
-            "scenario": scenario,
-            "text_length": len(request.text),
+        # Ensure minimal server fields always present (verifiable)
+        audit_merged.setdefault("server_time_utc", _utc_now_iso())
+        audit_merged.setdefault("latency_ms", latency_ms)
 
-            # optional (only if provided by pipeline/repairer)
-            "llm_used": llm_used,
-            "cache_hit": cache_hit,
-            "model": model_name,
-            "usage": usage if isinstance(usage, dict) else {},
-        }
+        # Also keep API-normalized mode for contract clarity
+        audit_merged["mode_raw"] = str(mode_raw)
+        audit_merged["mode_normalized"] = mode
+        audit_merged["pass_through"] = pass_through
+        audit_merged["text_length"] = len(request.text)
+        audit_merged["freq_type"] = freq_type
+        audit_merged["scenario"] = scenario
+        audit_merged["confidence_final"] = confidence_final
+        audit_merged["confidence_classifier"] = confidence_classifier
 
         # Log analysis (never break API)
         log_id = None
@@ -270,14 +266,15 @@ async def analyze(request: AnalyzeRequest):
                         "text_length": len(request.text),
                         "scenario": scenario,
                         "latency_ms": latency_ms,
+                        # best-effort: include llm_used if present
+                        "llm_used": bool(audit_merged.get("llm_used")) if "llm_used" in audit_merged else None,
                     },
                 )
                 log_id = log.get("timestamp")
             except Exception as log_error:
                 logger.warning(f"⚠️ Logging failed: {log_error}")
 
-        # Attach log_id into audit for traceability
-        audit["log_id"] = log_id
+        audit_merged["log_id"] = log_id
 
         return AnalyzeResponse(
             original=result.get("original", request.text),
@@ -289,7 +286,7 @@ async def analyze(request: AnalyzeRequest):
             repaired_text=repaired_text,
             repair_note=repair_note,
             ui=ui,
-            audit=audit,
+            audit=audit_merged,
             log_id=log_id,
         )
 
