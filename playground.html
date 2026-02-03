@@ -33,7 +33,35 @@
     .hero .headline{ font-size:1.15em; color:#fff; margin-bottom:6px; }
     .hero .sub{ color:#a8a8a8; font-size:0.92em; }
     .hero .sub strong{ color:#d9d9d9; font-weight:700; }
+    .hero .micro{
+      margin-top:10px;
+      color:#bdbdbd;
+      font-size:0.9em;
+      display:flex;
+      flex-wrap:wrap;
+      gap:10px;
+      align-items:center;
+    }
+    .legend{
+      display:inline-flex; align-items:center; gap:10px; flex-wrap:wrap;
+      padding:8px 10px;
+      border-radius:10px;
+      border:1px solid #222;
+      background:#0d0d0d;
+    }
+    .lamp{
+      display:inline-flex; align-items:center; gap:8px;
+      font-weight:800;
+      letter-spacing:.2px;
+      font-size:0.92em;
+      white-space:nowrap;
+    }
+    .lamp .c{ width:10px; height:10px; border-radius:999px; display:inline-block; }
+    .c-g{ background:#51cf66; }
+    .c-y{ background:#ffd43b; }
+    .c-r{ background:#ff6b6b; }
 
+    /* Layer 1 */
     .panel{
       background:#111;
       border:1px solid #2b2b2b;
@@ -103,6 +131,7 @@
     .counter.good{ color:#51cf66; }
     .counter.warn{ color:#ff922b; }
 
+    /* Compare blocks */
     .compare{
       display:grid;
       grid-template-columns: 1fr 1fr;
@@ -129,6 +158,7 @@
     .card-head .title{
       font-size:1em; color:#fff;
       display:flex; align-items:center; gap:8px;
+      flex-wrap:wrap;
     }
     .badge{
       display:inline-flex;
@@ -252,18 +282,31 @@
       <h1>💎 Continuum</h1>
       <span class="pill">AI Conversation Risk Governance</span>
     </div>
+
     <div class="hero">
       <div class="headline">
-        Continuum is the <strong>circuit breaker</strong> for generative AI —
-        deciding when the model should <strong>speak</strong>, <strong>soften</strong>, or <strong>stay silent</strong>.
+        Continuum is the <strong>circuit breaker</strong> for generative AI — deciding when the model should
+        <strong>speak</strong>, <strong>soften</strong>, or <strong>stay silent</strong>.
       </div>
       <div class="sub">
-        Decision States: <strong>🟢 ALLOW</strong> · <strong>🟡 GUIDE</strong> · <strong>🔴 BLOCK</strong> —
-        one decision per output (auditable, no retraining).
+        One decision per output. <strong>Auditable.</strong> <strong>No retraining.</strong> Built to prevent
+        <strong>over-comfort</strong> and <strong>over-explain</strong> in the wrong moment.
+      </div>
+
+      <div class="micro">
+        <div class="legend" aria-label="Decision states">
+          <span class="lamp"><span class="c c-g"></span>ALLOW</span>
+          <span style="opacity:.5;">•</span>
+          <span class="lamp"><span class="c c-y"></span>GUIDE</span>
+          <span style="opacity:.5;">•</span>
+          <span class="lamp"><span class="c c-r"></span>BLOCK</span>
+        </div>
+        <div style="opacity:.85;">Even when the text looks similar, the decision behind it is the product.</div>
       </div>
     </div>
   </header>
 
+  <!-- Layer 1 -->
   <section class="panel">
     <div class="panel-title">
       <div class="left">
@@ -291,7 +334,9 @@
     <div id="errorMsg" class="error"></div>
   </section>
 
+  <!-- Layer 2 / 3 Compare -->
   <section class="compare">
+    <!-- Layer 2: Raw AI (Ungoverned) -->
     <div class="card" style="border-color:#3a1f1f;">
       <div class="card-head">
         <div class="title">
@@ -302,17 +347,18 @@
       </div>
 
       <div class="blurb">
-        <strong>Why users leave:</strong> the AI adds an extra step (comfort/explain) when the user didn’t allow it.
+        <strong>Why users leave:</strong> the model adds an extra step (comfort / explain / advise) when the user didn’t allow it.
       </div>
 
       <div class="box" id="baselineText">(Run demo to generate a typical risky response)</div>
 
       <div class="mini" id="baselineWhy">
         <span class="badge badge-warn">overreach</span>
-        <span>Shows “the wrong kind of helpful” at the wrong moment.</span>
+        <span>Common failure: the AI “does more” than the user allowed.</span>
       </div>
     </div>
 
+    <!-- Layer 3: Continuum Decision Output -->
     <div class="card" style="border-color:#1f3a25;">
       <div class="card-head">
         <div class="title">
@@ -323,8 +369,7 @@
       </div>
 
       <div class="blurb" id="govBlurb">
-        <strong>What you’re seeing:</strong> one audited decision applied to the AI output —
-        <strong>ALLOW / GUIDE / BLOCK</strong>. Even if the text looks similar, the decision prevents trust loss.
+        <strong>CIP Decision:</strong> every output receives exactly one state — <strong>ALLOW</strong>, <strong>GUIDE</strong>, or <strong>BLOCK</strong>.
       </div>
 
       <div class="box" id="govText">(Waiting…)</div>
@@ -465,42 +510,50 @@
     return d || 'allow';
   }
 
+  // IMPORTANT FIX:
+  // If the displayed output equals the user's input, it is NOT "ALLOW".
+  // It is GUIDE via Echoing Protocol (agency return).
+  function resolveDecision(decision, userText, outputText){
+    const d = humanizeDecision(decision);
+    const u = String(userText || '').trim();
+    const o = String(outputText || '').trim();
+    if (d === 'allow' && u && o && u === o) return 'guide';
+    return d;
+  }
+
   function decisionBadgeUI(decision){
     const d = humanizeDecision(decision);
-
     if (d === 'allow') return {
       text: 'ALLOW',
       cls: 'badge badge-safe',
-      blurb: "<strong>Decision:</strong> <strong>ALLOW</strong> — context is stable. Output approved as-is (no intervention).",
-      log: "CIP Decision: ALLOW — Output approved as-is.",
+      blurb: "<strong>CIP Decision:</strong> <strong>ALLOW</strong> — context is stable. Output approved as-is (no intervention).",
+      log: "CIP Decision: ALLOW — transparent pass-through.",
       cip: { text: "CIP: Context Integrity Preserved", cls: "badge badge-mid" }
     };
-
     if (d === 'guide') return {
       text: 'GUIDE',
       cls: 'badge badge-warn',
-      blurb: "<strong>Decision:</strong> <strong>GUIDE</strong> — sensitivity detected. Output downgraded to prevent overreach and return agency to the user (Echoing Protocol).",
-      log: "CIP Decision: GUIDE — Echoing Protocol / minimal response applied.",
-      cip: { text: "CIP: Echoing Protocol Activated", cls: "badge badge-info" }
+      blurb: "<strong>CIP Decision:</strong> <strong>GUIDE</strong> — sensitivity detected. Echoing Protocol may be applied to return the agency to the user.",
+      log: "CIP Decision: GUIDE — downgraded to minimal / echoing response.",
+      cip: { text: "CIP: Echoing Protocol (Agency Return)", cls: "badge badge-info" }
     };
-
     if (d === 'block') return {
       text: 'BLOCK',
       cls: 'badge badge-risk',
-      blurb: "<strong>Decision:</strong> <strong>BLOCK</strong> — trust erosion risk detected. Output intercepted before delivery.",
-      log: "CIP Decision: BLOCK — Output intercepted before delivery.",
+      blurb: "<strong>CIP Decision:</strong> <strong>BLOCK</strong> — trust erosion risk detected. Output intercepted before delivery.",
+      log: "CIP Decision: BLOCK — interception executed.",
       cip: { text: "CIP: Interception Executed", cls: "badge badge-risk" }
     };
-
     return {
       text: 'ALLOW',
       cls: 'badge badge-safe',
-      blurb: "<strong>Decision:</strong> <strong>ALLOW</strong> — output approved.",
-      log: "CIP Decision: ALLOW — Output approved as-is.",
+      blurb: "<strong>CIP Decision:</strong> <strong>ALLOW</strong> — output approved.",
+      log: "CIP Decision: ALLOW — pass-through.",
       cip: { text: "CIP: Context Integrity Preserved", cls: "badge badge-mid" }
     };
   }
 
+  // Layer 2 (ungoverned) — show typical risky move
   function generateBaseline(text, freqType){
     const f = String(freqType || 'Unknown');
     let out = "我懂你的意思。我們先把問題拆開，然後一步步解決。";
@@ -513,6 +566,25 @@
       out = "你是不是其實很受傷？我在這裡陪你，我們可以慢慢聊。";
     } else if (f === 'Blur') {
       out = "你看起來有點不確定，我建議你先想清楚你的目標，然後我再幫你做決策。";
+    }
+    return out;
+  }
+
+  // Layer 3 (ALLOW) — show a safe, professional AI response (until API provides real raw output)
+  function generateSafeAI(text, freqType){
+    const f = String(freqType || 'Unknown');
+
+    // Keep it single-line, non-overreaching, non-preachy.
+    let out = "我聽見了。你願意的話，告訴我你現在最卡住的是哪一點。";
+
+    if (f === 'Anxious') {
+      out = "我聽見你快撐不住了。若你願意，先告訴我此刻最難受的是哪一段。";
+    } else if (f === 'Sharp') {
+      out = "我收到你的需求。你希望我直接給答案，還是先確認一個關鍵條件？";
+    } else if (f === 'Cold') {
+      out = "我在。你可以只回一個詞：你現在想要的是空間，還是回應？";
+    } else if (f === 'Blur') {
+      out = "我收到你的不確定。先用一句話描述你最在意的結果是什麼即可。";
     }
     return out;
   }
@@ -533,7 +605,7 @@
   }
 
   function applyAudit(audit){
-    setAuditDefaults();
+    // do NOT call setAuditDefaults() here, because we already set decision UI earlier.
     if (!audit || typeof audit !== 'object') {
       document.getElementById('auditSource').textContent = 'source: (no audit)';
       return;
@@ -590,6 +662,9 @@
     if (lines.length) {
       noteEl.innerHTML = lines.join('<br/>');
       noteEl.style.display = 'block';
+    } else {
+      noteEl.style.display = 'none';
+      noteEl.textContent = '';
     }
   }
 
@@ -606,6 +681,7 @@
     document.getElementById('baselineText').textContent = '(Generating...)';
     document.getElementById('govText').textContent = '(Analyzing...)';
     document.getElementById('govNote').style.display = 'none';
+
     setAuditDefaults();
 
     try{
@@ -618,23 +694,41 @@
       const data = await resp.json();
 
       const freq = data.freq_type || 'Unknown';
-      const rawMode = (data.decision || data.mode || data.repair_mode || 'no-op');
-      const decision = humanizeDecision(rawMode);
 
-      const scenario = data.scenario || '';
-      const repaired = data.repaired_text || data.original || '';
+      // Layer 2: "Raw AI Output (Ungoverned)" — demo risk behavior
+      const rawUngoverned = generateBaseline(text, freq);
+      document.getElementById('baselineText').textContent = rawUngoverned;
 
-      const conf = (data.confidence_final !== undefined) ? data.confidence_final
-                 : (data.confidence && data.confidence.final !== undefined) ? data.confidence.final
-                 : (typeof data.confidence === 'number') ? data.confidence
-                 : 0;
-
-      document.getElementById('baselineText').textContent = generateBaseline(text, freq);
       document.getElementById('baselineBadge').textContent = 'RISK';
       document.getElementById('baselineBadge').className = 'badge badge-risk';
 
-      document.getElementById('govText').textContent = repaired || '(no output)';
+      // Decision mapping: prefer explicit decision; fallback to mode/repair_mode
+      const rawMode = (data.decision || data.mode || data.repair_mode || 'no-op');
 
+      // API output: repaired_text might be echo (== user text) or rewrite; original may be user text.
+      const apiOutput = (data.repaired_text || data.original || '').trim();
+
+      // Resolve decision with anti-confusion rule (echo != allow)
+      const decision = resolveDecision(rawMode, text, apiOutput);
+
+      // Decide what to display in Layer 3:
+      // - ALLOW: show a safe AI output (until you provide real "raw_ai_output" from API)
+      // - GUIDE: show API output if available; if empty, use echo (user text)
+      // - BLOCK: show blocked marker (optionally you can later route to a safety flow)
+      let governedOut = '';
+      if (decision === 'allow') {
+        governedOut = (data.raw_ai_output && String(data.raw_ai_output).trim()) || generateSafeAI(text, freq);
+      } else if (decision === 'guide') {
+        governedOut = apiOutput || text; // echo fallback
+      } else if (decision === 'block') {
+        governedOut = "[Blocked by Continuum]";
+      } else {
+        governedOut = apiOutput || generateSafeAI(text, freq);
+      }
+
+      document.getElementById('govText').textContent = governedOut || '(no output)';
+
+      // Decision UI
       const ui = decisionBadgeUI(decision);
 
       const govBadge = document.getElementById('govBadge');
@@ -643,14 +737,24 @@
 
       document.getElementById('govBlurb').innerHTML = ui.blurb;
 
+      // Tags
       const dotClass = toneDotClass(freq);
       document.getElementById('toneTag').innerHTML = `<span class="dot ${dotClass}"></span><span>tone: ${freq}</span>`;
       document.getElementById('modeTag').textContent = `decision: ${decision}`;
 
-      const confPct = Math.round(Number(conf) * 100);
-      document.getElementById('confTag').textContent =
-        (decision === 'allow') ? 'confidence: within range' : `confidence: ${confPct}%`;
+      const conf = (data.confidence_final !== undefined) ? data.confidence_final
+                 : (data.confidence && data.confidence.final !== undefined) ? data.confidence.final
+                 : (typeof data.confidence === 'number') ? data.confidence
+                 : null;
 
+      if (decision === 'allow') {
+        document.getElementById('confTag').textContent = 'confidence: within range';
+      } else {
+        const confPct = (conf === null) ? '-' : `${Math.round(Number(conf) * 100)}%`;
+        document.getElementById('confTag').textContent = `confidence: ${confPct}`;
+      }
+
+      // Decision log + CIP tag
       const decisionLog = document.getElementById('decisionLog');
       decisionLog.textContent = ui.log;
       decisionLog.className =
@@ -662,8 +766,10 @@
       cipTag.textContent = ui.cip.text;
       cipTag.className = ui.cip.cls;
 
+      // Apply audit if present
       applyAudit(data.audit);
 
+      // Optional note
       const note = data.repair_note || "";
       if (note){
         const noteEl = document.getElementById('govNote');
@@ -671,9 +777,13 @@
         noteEl.style.display = 'block';
       }
 
+      // Optional: scenario hint
+      const scenario = data.scenario || '';
       const baselineWhy = document.getElementById('baselineWhy');
       if (scenario){
         baselineWhy.innerHTML = `<span class="badge badge-warn">overreach</span><span>Common failure in <strong>${scenario}</strong>: the AI “does more” than the user allowed.</span>`;
+      } else {
+        baselineWhy.innerHTML = `<span class="badge badge-warn">overreach</span><span>Common failure: the AI “does more” than the user allowed.</span>`;
       }
 
     } catch(err){
