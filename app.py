@@ -1,10 +1,9 @@
 """
 Continuum API - Hugging Face Spaces Compatible App
 --------------------------------------------------
-Key points:
-- Uses FastAPI lifespan (no deprecated on_event)
-- Explicitly starts uvicorn on port 7860
-- Keeps your pipeline / LLM / audit logic intact
+- FastAPI lifespan (HF-safe)
+- Returns pipeline truth (no guessing at API layer)
+- Exposes flat audit fields for the Playground UI
 """
 
 import os
@@ -80,8 +79,8 @@ async def lifespan(app: FastAPI):
 # -------------------- FastAPI App --------------------
 app = FastAPI(
     title="Continuum API",
-    description="Tone rhythm detection and repair for conversational AI",
-    version="2.2.1-hf",
+    description="AI conversation risk governance (output-side)",
+    version="2.2.2-hf",
     lifespan=lifespan,
 )
 
@@ -104,10 +103,15 @@ class AnalyzeResponse(BaseModel):
     freq_type: str
     mode: str
     confidence_final: float
-    confidence_classifier: Optional[float]
+    confidence_classifier: Optional[float] = None
     scenario: str
-    repaired_text: Optional[str]
-    repair_note: Optional[str]
+    repaired_text: Optional[str] = None
+    repair_note: Optional[str] = None
+
+    # NEW: if you later expose LLM raw output from repairer, UI can show Layer 2 truth
+    raw_ai_output: Optional[str] = None
+
+    # UI-friendly flat audit (what the Playground expects)
     audit: Dict[str, Any]
 
 
@@ -140,33 +144,62 @@ async def analyze(req: AnalyzeRequest):
     result = pipeline.process(req.text)
 
     if result.get("error"):
-        raise HTTPException(400, result.get("reason"))
+        raise HTTPException(400, result.get("reason", "pipeline_error"))
 
+    # Core fields
     original = result.get("original", req.text)
     freq_type = result.get("freq_type", "Unknown")
-
-    conf = result.get("confidence") or {}
-    confidence_final = _safe_conf(conf.get("final", 0.0))
-    confidence_classifier = _safe_conf(conf.get("classifier", 0.0))
-
     mode = (result.get("mode") or "no-op").lower()
+
+    # Confidence fields (pipeline truth)
+    conf_obj = result.get("confidence") or {}
+    confidence_final = _safe_conf(conf_obj.get("final", result.get("confidence_final", 0.0)))
+    confidence_classifier = _safe_conf(conf_obj.get("classifier", result.get("confidence_classifier", 0.0)))
+
+    # Output fields
     out = result.get("output") or {}
+    scenario = out.get("scenario", result.get("scenario", "unknown"))
+    repaired_text = out.get("repaired_text", result.get("repaired_text"))
+    repair_note = out.get("repair_note", result.get("repair_note"))
 
-    scenario = out.get("scenario", "unknown")
-    repaired_text = out.get("repaired_text")
-    repair_note = out.get("repair_note")
+    # IMPORTANT:
+    # We do NOT invent raw output here.
+    # If repairer later provides it (raw_ai_output / llm_raw_output / baseline_output), we pass it through.
+    raw_ai_output = (
+        out.get("raw_ai_output")
+        or out.get("llm_raw_output")
+        or out.get("baseline_output")
+        or result.get("raw_ai_output")
+    )
 
-    if mode == "no-op":
-        repaired_text = original
-        repair_note = "Tone is within safe range. Transparent pass-through."
+    # Audit: use pipeline top-level audit if present (source of truth)
+    audit_top = result.get("audit") if isinstance(result.get("audit"), dict) else {}
+    output_source = result.get("output_source", out.get("output_source", audit_top.get("output_source", "unknown")))
+    llm_used = result.get("llm_used", out.get("llm_used", audit_top.get("llm_used", None)))
+    cache_hit = result.get("cache_hit", out.get("cache_hit", audit_top.get("cache_hit", None)))
+    model_name = result.get("model", out.get("model", audit_top.get("model", "")))
+    usage = result.get("usage", out.get("usage", audit_top.get("usage", {})))
 
+    # UI expects:
+    # audit.output_source, audit.timing_ms.total, audit.llm_eligible/attempted/succeeded, audit.output_gate_passed/reason, fallback info
+    # We map what we have without inventing.
     audit = {
         "server_time_utc": _utc_now(),
-        "latency_ms": int((time.time() - t0) * 1000),
-        "mode": mode,
-        "freq_type": freq_type,
-        "confidence_final": confidence_final,
-        "repairer": out.get("audit", {}),
+        "output_source": output_source,
+        "timing_ms": {"total": int((time.time() - t0) * 1000)},
+        # We don't know "eligible/attempted/succeeded" unless repairer tells us, so keep minimal truthful values:
+        "llm_eligible": True if llm_used is True else False if llm_used is False else False,
+        "llm_attempted": True if llm_used is True else False,
+        "llm_succeeded": True if llm_used is True else False,
+        "cache_hit": cache_hit,
+        "model": model_name or "",
+        "usage": usage if isinstance(usage, dict) else {},
+        # gate/fallback may exist in audit_top (from repairer); pass through if present
+        "output_gate_passed": audit_top.get("output_gate_passed", None),
+        "output_gate_reason": audit_top.get("output_gate_reason", audit_top.get("output_gate_result", "")),
+        "fallback_used": audit_top.get("fallback_used", False),
+        "fallback_reason": audit_top.get("fallback_reason", ""),
+        "llm_error": audit_top.get("llm_error", ""),
     }
 
     return AnalyzeResponse(
@@ -178,13 +211,13 @@ async def analyze(req: AnalyzeRequest):
         scenario=scenario,
         repaired_text=repaired_text,
         repair_note=repair_note,
+        raw_ai_output=raw_ai_output,
         audit=audit,
     )
 
 
 # -------------------- HF entrypoint --------------------
 if __name__ == "__main__":
-    # Hugging Face expects port 7860
     uvicorn.run(
         "app:app",
         host="0.0.0.0",
