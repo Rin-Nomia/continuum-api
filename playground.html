@@ -323,13 +323,15 @@
       <div class="card-head">
         <div class="title">
           <span style="opacity:.9;">Layer 3</span>
-          <span>Continuum-Governed Output</span>
+          <span>Continuum Decision Output</span>
         </div>
-        <span class="badge badge-safe" id="govBadge">SAFE</span>
+        <span class="badge badge-safe" id="govBadge">ALLOW</span>
       </div>
 
+      <!-- UPDATED: Layer 3 explanation blurb (UI copy) -->
       <div class="blurb" id="govBlurb">
-        <strong>Continuum’s job:</strong> choose precise <strong>non-intervention</strong> most of the time.
+        <strong>What you’re seeing:</strong> the output below is the result of a single decision —
+        <strong>Allow / Guide / Block</strong>. Even if the text looks similar, the decision is the product.
       </div>
 
       <div class="box" id="govText">(Waiting…)</div>
@@ -338,8 +340,14 @@
 
       <div class="mini">
         <span id="toneTag" class="tone-tag"><span class="dot dot-unk"></span><span>tone: Unknown</span></span>
-        <span class="badge badge-info" id="modeTag">mode: -</span>
+        <span class="badge badge-info" id="modeTag">decision: -</span>
         <span class="badge badge-info" id="confTag">confidence: -</span>
+      </div>
+
+      <!-- NEW: decision log line (always visible) -->
+      <div class="mini" style="margin-top:6px;">
+        <span class="badge badge-info" id="decisionLog">Continuum Decision: -</span>
+        <span class="badge badge-mid" id="cipTag">CIP: -</span>
       </div>
 
       <!-- NEW: audit tags -->
@@ -416,6 +424,15 @@
     const note = document.getElementById('auditNote');
     note.style.display = 'none';
     note.textContent = '';
+
+    // decision UI defaults
+    const decisionLog = document.getElementById('decisionLog');
+    decisionLog.textContent = 'Continuum Decision: -';
+    decisionLog.className = 'badge badge-info';
+
+    const cipTag = document.getElementById('cipTag');
+    cipTag.textContent = 'CIP: -';
+    cipTag.className = 'badge badge-mid';
   }
 
   function humanizeGateReason(reason){
@@ -448,6 +465,35 @@
       "exception": "Exception occurred → passthrough/fallback applied."
     };
     return map[reason] || `Fallback reason: ${reason}`;
+  }
+
+  function humanizeDecision(decisionLower){
+    const d = String(decisionLower || '').toLowerCase();
+    if (d === 'allow' || d === 'no-op' || d === 'noop') return 'allow';
+    if (d === 'guide') return 'guide';
+    if (d === 'block') return 'block';
+    if (d === 'repair') return 'guide';
+    return d || 'allow';
+  }
+
+  function decisionBadgeUI(decision){
+    const d = humanizeDecision(decision);
+    if (d === 'allow') return { text: 'ALLOW', cls: 'badge badge-safe', blurb:
+      "<strong>Decision:</strong> <strong>ALLOW</strong> — context is stable. Output approved (no intervention).",
+      cip: { text: "CIP: Context Integrity Preserved", cls: "badge badge-mid" }
+    };
+    if (d === 'guide') return { text: 'GUIDE', cls: 'badge badge-warn', blurb:
+      "<strong>Decision:</strong> <strong>GUIDE</strong> — sensitivity detected. Output downgraded to prevent overreach.",
+      cip: { text: "CIP: Active (Active Non-Intervention Strategy)", cls: "badge badge-info" }
+    };
+    if (d === 'block') return { text: 'BLOCK', cls: 'badge badge-risk', blurb:
+      "<strong>Decision:</strong> <strong>BLOCK</strong> — trust erosion risk detected. Output intercepted before delivery.",
+      cip: { text: "CIP: Interception Executed", cls: "badge badge-risk" }
+    };
+    return { text: 'ALLOW', cls: 'badge badge-safe', blurb:
+      "<strong>Decision:</strong> <strong>ALLOW</strong> — output approved.",
+      cip: { text: "CIP: Context Integrity Preserved", cls: "badge badge-mid" }
+    };
   }
 
   // --- Baseline (Ungoverned) generator ---
@@ -581,7 +627,12 @@
 
       // ---- Continuum output side ----
       const freq = data.freq_type || 'Unknown';
-      const mode = (data.mode || data.repair_mode || 'no-op');
+
+      // Decision mapping:
+      // prefer explicit decision field if you add later; fallback to current mode/repair_mode
+      const rawMode = (data.decision || data.mode || data.repair_mode || 'no-op');
+      const decision = humanizeDecision(rawMode);
+
       const scenario = data.scenario || '';
       const repaired = data.repaired_text || data.original || '';
 
@@ -598,34 +649,44 @@
       document.getElementById('baselineBadge').textContent = 'RISK';
       document.getElementById('baselineBadge').className = 'badge badge-risk';
 
-      // Governed side
+      // Governed side output
       document.getElementById('govText').textContent = repaired || '(no output)';
-      const govBadge = document.getElementById('govBadge');
 
-      const modeLower = String(mode).toLowerCase();
-      if (modeLower === 'no-op' || modeLower === 'noop') {
-        govBadge.textContent = 'SAFE';
-        govBadge.className = 'badge badge-safe';
-        document.getElementById('govBlurb').innerHTML =
-          "<strong>Continuum’s decision:</strong> this message is within range → <strong>no intervention</strong>.";
-      } else if (modeLower === 'repair') {
-        govBadge.textContent = 'INTERVENE';
-        govBadge.className = 'badge badge-warn';
-        document.getElementById('govBlurb').innerHTML =
-          "<strong>Continuum’s decision:</strong> prevent overreach → <strong>minimal rewrite</strong> (meaning preserved).";
-      } else {
-        govBadge.textContent = 'GUIDE';
-        govBadge.className = 'badge badge-info';
-        document.getElementById('govBlurb').innerHTML =
-          "<strong>Continuum’s decision:</strong> give a safe guidance output (no personality drift).";
-      }
+      // --- Layer 3: Decision UI copy (THE MAIN CHANGE) ---
+      const govBadge = document.getElementById('govBadge');
+      const ui = decisionBadgeUI(decision);
+
+      govBadge.textContent = ui.text;
+      govBadge.className = ui.cls;
+
+      // blurb becomes decision rationale (short and unambiguous)
+      document.getElementById('govBlurb').innerHTML = ui.blurb;
 
       // Tags
       const dotClass = toneDotClass(freq);
       document.getElementById('toneTag').innerHTML = `<span class="dot ${dotClass}"></span><span>tone: ${freq}</span>`;
-      document.getElementById('modeTag').textContent = `mode: ${modeLower}`;
+
+      // modeTag becomes decision tag
+      document.getElementById('modeTag').textContent = `decision: ${decision}`;
+
       const confPct = Math.round(Number(conf) * 100);
-      document.getElementById('confTag').textContent = (modeLower === 'no-op') ? 'confidence: within range' : `confidence: ${confPct}%`;
+      // keep it aligned: allow shows "within range"; guide/block show numeric
+      document.getElementById('confTag').textContent =
+        (decision === 'allow') ? 'confidence: within range' : `confidence: ${confPct}%`;
+
+      // Decision log line (always visible)
+      const decisionLog = document.getElementById('decisionLog');
+      const reason = (data.audit && (data.audit.output_gate_reason || data.audit.fallback_reason)) ? '' : '';
+      decisionLog.textContent = `Continuum Decision: ${ui.text}`;
+      decisionLog.className =
+        (decision === 'allow') ? 'badge badge-safe' :
+        (decision === 'guide') ? 'badge badge-warn' :
+        (decision === 'block') ? 'badge badge-risk' : 'badge badge-info';
+
+      // CIP tag
+      const cipTag = document.getElementById('cipTag');
+      cipTag.textContent = ui.cip.text;
+      cipTag.className = ui.cip.cls;
 
       // Apply audit (from upgraded repairer)
       applyAudit(data.audit);
