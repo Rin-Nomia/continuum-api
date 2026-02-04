@@ -3,7 +3,7 @@ Continuum API - Hugging Face Spaces Compatible App
 --------------------------------------------------
 - FastAPI lifespan (HF-safe)
 - Returns pipeline truth (no guessing at API layer)
-- Exposes flat audit fields for the Playground UI
+- Exposes raw LLM output ONLY when RETURN_LLM_RAW=1 (internal debug)
 """
 
 import os
@@ -80,7 +80,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Continuum API",
     description="AI conversation risk governance (output-side)",
-    version="2.2.2-hf",
+    version="2.2.3-hf",
     lifespan=lifespan,
 )
 
@@ -108,10 +108,10 @@ class AnalyzeResponse(BaseModel):
     repaired_text: Optional[str] = None
     repair_note: Optional[str] = None
 
-    # NEW: if you later expose LLM raw output from repairer, UI can show Layer 2 truth
+    # Layer 2 truth (ONLY present when RETURN_LLM_RAW=1 and LLM was attempted)
     raw_ai_output: Optional[str] = None
 
-    # UI-friendly flat audit (what the Playground expects)
+    # What Playground expects
     audit: Dict[str, Any]
 
 
@@ -162,45 +162,30 @@ async def analyze(req: AnalyzeRequest):
     repaired_text = out.get("repaired_text", result.get("repaired_text"))
     repair_note = out.get("repair_note", result.get("repair_note"))
 
-    # IMPORTANT:
-    # We do NOT invent raw output here.
-    # If repairer later provides it (raw_ai_output / llm_raw_output / baseline_output), we pass it through.
+    # ✅ KEY FIX:
+    # repairer returns "llm_raw_response" (gated by RETURN_LLM_RAW=1)
+    # We pass it through as "raw_ai_output" for Layer 2.
     raw_ai_output = (
         out.get("raw_ai_output")
         or out.get("llm_raw_output")
         or out.get("baseline_output")
+        or out.get("llm_raw_response")  # <-- THIS is the real one from repairer
         or result.get("raw_ai_output")
     )
 
-    # Audit: use pipeline top-level audit if present (source of truth)
+    # ✅ Audit: PASS THROUGH THE TRUTH.
+    # pipeline puts truthful audit at top-level: result["audit"] (mirrors output.audit)
     audit_top = result.get("audit") if isinstance(result.get("audit"), dict) else {}
-    output_source = result.get("output_source", out.get("output_source", audit_top.get("output_source", "unknown")))
-    llm_used = result.get("llm_used", out.get("llm_used", audit_top.get("llm_used", None)))
-    cache_hit = result.get("cache_hit", out.get("cache_hit", audit_top.get("cache_hit", None)))
-    model_name = result.get("model", out.get("model", audit_top.get("model", "")))
-    usage = result.get("usage", out.get("usage", audit_top.get("usage", {})))
 
-    # UI expects:
-    # audit.output_source, audit.timing_ms.total, audit.llm_eligible/attempted/succeeded, audit.output_gate_passed/reason, fallback info
-    # We map what we have without inventing.
-    audit = {
-        "server_time_utc": _utc_now(),
-        "output_source": output_source,
-        "timing_ms": {"total": int((time.time() - t0) * 1000)},
-        # We don't know "eligible/attempted/succeeded" unless repairer tells us, so keep minimal truthful values:
-        "llm_eligible": True if llm_used is True else False if llm_used is False else False,
-        "llm_attempted": True if llm_used is True else False,
-        "llm_succeeded": True if llm_used is True else False,
-        "cache_hit": cache_hit,
-        "model": model_name or "",
-        "usage": usage if isinstance(usage, dict) else {},
-        # gate/fallback may exist in audit_top (from repairer); pass through if present
-        "output_gate_passed": audit_top.get("output_gate_passed", None),
-        "output_gate_reason": audit_top.get("output_gate_reason", audit_top.get("output_gate_result", "")),
-        "fallback_used": audit_top.get("fallback_used", False),
-        "fallback_reason": audit_top.get("fallback_reason", ""),
-        "llm_error": audit_top.get("llm_error", ""),
-    }
+    # Always include server time + latency total, but do not invent other fields.
+    audit = dict(audit_top)
+    audit.setdefault("timing_ms", {})
+    if isinstance(audit.get("timing_ms"), dict):
+        audit["timing_ms"]["total"] = int((time.time() - t0) * 1000)
+    else:
+        audit["timing_ms"] = {"total": int((time.time() - t0) * 1000)}
+
+    audit["server_time_utc"] = _utc_now()
 
     return AnalyzeResponse(
         original=original,
