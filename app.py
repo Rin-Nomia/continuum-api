@@ -1,9 +1,13 @@
+# app.py
 """
 Continuum API - Hugging Face Spaces Compatible App
 --------------------------------------------------
 - FastAPI lifespan (HF-safe)
 - Returns pipeline truth (no guessing at API layer)
 - Exposes raw LLM output ONLY when RETURN_LLM_RAW=1 (internal debug)
+
+PATCH:
+- ✅ Returns result["metrics"] to frontend (Decision Log Panel)
 """
 
 import os
@@ -80,7 +84,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Continuum API",
     description="AI conversation risk governance (output-side)",
-    version="2.2.3-hf",
+    version="2.2.4-hf",
     lifespan=lifespan,
 )
 
@@ -113,6 +117,9 @@ class AnalyzeResponse(BaseModel):
 
     # What Playground expects
     audit: Dict[str, Any]
+
+    # NEW: Governance metrics for the Decision Log Panel
+    metrics: Optional[Dict[str, Any]] = None
 
 
 # -------------------- Endpoints --------------------
@@ -162,30 +169,29 @@ async def analyze(req: AnalyzeRequest):
     repaired_text = out.get("repaired_text", result.get("repaired_text"))
     repair_note = out.get("repair_note", result.get("repair_note"))
 
-    # ✅ KEY FIX:
+    # ✅ Layer 2 truth (debug only):
     # repairer returns "llm_raw_response" (gated by RETURN_LLM_RAW=1)
-    # We pass it through as "raw_ai_output" for Layer 2.
     raw_ai_output = (
         out.get("raw_ai_output")
         or out.get("llm_raw_output")
         or out.get("baseline_output")
-        or out.get("llm_raw_response")  # <-- THIS is the real one from repairer
+        or out.get("llm_raw_response")  # <-- real one from repairer when enabled
         or result.get("raw_ai_output")
     )
 
     # ✅ Audit: PASS THROUGH THE TRUTH.
-    # pipeline puts truthful audit at top-level: result["audit"] (mirrors output.audit)
     audit_top = result.get("audit") if isinstance(result.get("audit"), dict) else {}
 
-    # Always include server time + latency total, but do not invent other fields.
     audit = dict(audit_top)
     audit.setdefault("timing_ms", {})
     if isinstance(audit.get("timing_ms"), dict):
         audit["timing_ms"]["total"] = int((time.time() - t0) * 1000)
     else:
         audit["timing_ms"] = {"total": int((time.time() - t0) * 1000)}
-
     audit["server_time_utc"] = _utc_now()
+
+    # ✅ Metrics: truth from pipeline (Decision Log Panel)
+    metrics = result.get("metrics") if isinstance(result.get("metrics"), dict) else None
 
     return AnalyzeResponse(
         original=original,
@@ -198,6 +204,7 @@ async def analyze(req: AnalyzeRequest):
         repair_note=repair_note,
         raw_ai_output=raw_ai_output,
         audit=audit,
+        metrics=metrics,
     )
 
 
