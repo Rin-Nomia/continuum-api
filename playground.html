@@ -1,4 +1,4 @@
-<!-- index.html (full file, unchanged logic; already compatible with the fixes above) -->
+<!-- index.html (full file, updated copy: P0 + P1 + BLOCK inline reason; unchanged core API contract) -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -193,6 +193,22 @@
       white-space:pre-wrap;
     }
 
+    /* P0/P1: BLOCK inline note under governed output */
+    .gov-note{
+      margin-top:8px;
+      padding:10px 12px;
+      border-radius:10px;
+      border:1px solid #2b2b2b;
+      background:#0f1218;
+      color:#b9c0cc;
+      font-size:0.9em;
+      display:none; /* toggled by JS */
+    }
+    .gov-note strong{ color:#e6e6e6; }
+    .gov-note .line{ display:flex; justify-content:space-between; gap:10px; padding:4px 0; }
+    .gov-note .k{ color:#9aa4b2; }
+    .gov-note .v{ color:#e6e6e6; font-weight:800; text-align:right; word-break:break-word; }
+
     .mini{
       display:flex; gap:10px; flex-wrap:wrap; align-items:center;
       color:#9a9a9a; font-size:0.9em;
@@ -229,7 +245,7 @@
       display:none;
     }
 
-    /* ---- Layer 3 internal layout: output + Decision Log Panel (Option 2) ---- */
+    /* ---- Layer 3 internal layout: output + Decision Log Panel ---- */
     .gov-grid{
       display:grid;
       grid-template-columns: 1fr 320px;
@@ -376,13 +392,15 @@
       <div class="card-head">
         <div class="title">
           <span style="opacity:.9;">Layer 2</span>
-          <span>Raw AI Output (Ungoverned)</span>
+          <span>Typical Ungoverned Output <span style="opacity:.8;">(Simulated)</span></span>
         </div>
         <span class="badge badge-risk" id="baselineBadge">RISK</span>
       </div>
 
       <div class="blurb" id="baselineBlurb">
-        <strong>Why users leave:</strong> the model adds comfort / explain / advise when the user didn’t allow it.
+        <strong>Public demo baseline:</strong> simulated “overreach” behavior to show what governance prevents.
+        <br/>
+        <span style="opacity:.9;">Truth mode available under NDA / debug flag.</span>
       </div>
 
       <div class="box" id="baselineText">(Run demo to generate)</div>
@@ -411,6 +429,18 @@
         <div>
           <div class="box" id="govText">(Waiting…)</div>
 
+          <!-- BLOCK inline note (shows only on BLOCK) -->
+          <div class="gov-note" id="govNote" aria-label="Block inline note">
+            <div class="line">
+              <span class="k">Reason</span>
+              <span class="v" id="govNoteReason">-</span>
+            </div>
+            <div class="line">
+              <span class="k">Safe Flow</span>
+              <span class="v" id="govNoteFlow">handoff required</span>
+            </div>
+          </div>
+
           <div class="mini" style="margin-top:10px;">
             <span id="toneTag" class="tone-tag"><span class="dot dot-unk"></span><span>tone: Unknown</span></span>
             <span class="badge badge-info" id="modeTag">mode: -</span>
@@ -418,7 +448,7 @@
           </div>
         </div>
 
-        <!-- Option 2: Independent Decision Log Panel -->
+        <!-- Decision Log Panel -->
         <aside class="logpanel" aria-label="Decision log panel">
           <div class="lp-title">
             <strong>Decision Log</strong>
@@ -428,6 +458,15 @@
           <div id="decisionPill" class="pill2">
             <span class="c c-allow"></span>
             <span id="decisionStateText">ALLOW</span>
+          </div>
+
+          <div class="kv">
+            <div class="k">Action</div>
+            <div class="v" id="kvAction">-</div>
+          </div>
+          <div class="kv">
+            <div class="k">Reason Code</div>
+            <div class="v" id="kvReason">-</div>
           </div>
 
           <div class="kv">
@@ -581,7 +620,6 @@
   }
 
   function safeConfText(data, decisionState){
-    // Show confidence only for GUIDE/BLOCK
     const conf = (data.confidence_final !== undefined) ? data.confidence_final
                : (data.confidence && data.confidence.final !== undefined) ? data.confidence.final
                : (typeof data.confidence === 'number') ? data.confidence
@@ -592,12 +630,36 @@
     return `confidence: ${Math.round(Number(conf) * 100)}%`;
   }
 
+  function inferReasonCode(data, decisionState){
+    const freq = String((data && data.freq_type) ? data.freq_type : 'Unknown');
+    const scenario = String((data && (data.scenario || (data.output && data.output.scenario))) ? (data.scenario || (data.output && data.output.scenario)) : '');
+
+    if (String(decisionState).toUpperCase() === 'BLOCK'){
+      if (freq === 'OutOfScope' || scenario.includes('crisis') || scenario.includes('out_of_scope')){
+        return 'CRISIS_OOS';
+      }
+      return 'BLOCKED';
+    }
+
+    const f2 = freq.toUpperCase();
+    if (f2 && f2 !== 'UNKNOWN') return `TONE_${f2}`;
+    return 'TONE_UNKNOWN';
+  }
+
+  function inferAction(decisionState, suppressed){
+    const s = String(decisionState || 'ALLOW').toUpperCase();
+    if (s === 'ALLOW') return 'pass';
+    if (s === 'BLOCK') return 'intercept';
+    if (suppressed === true) return 'echo';
+    if (suppressed === false) return 'rewrite';
+    return 'guide';
+  }
+
   function applyDecisionLog(data){
     const metrics = (data && typeof data.metrics === 'object') ? data.metrics : null;
     const audit = (data && typeof data.audit === 'object') ? data.audit : null;
 
     const state = metrics && metrics.decision_state ? metrics.decision_state : (
-      // fallback (should rarely be needed)
       (String(data.mode || data.decision || 'no-op').toLowerCase() === 'no-op') ? 'ALLOW' :
       (String(data.freq_type || '') === 'OutOfScope' || String(data.scenario || '').includes('crisis')) ? 'BLOCK' :
       'GUIDE'
@@ -606,7 +668,15 @@
     decisionPillUI(state);
     badgeForDecision(state);
 
-    // KV fields
+    const suppressedVal =
+      (metrics && metrics.suppressed !== undefined) ? (metrics.suppressed ? true : false) : null;
+
+    const reason = inferReasonCode(data, state);
+    const action = inferAction(state, suppressedVal);
+
+    document.getElementById('kvAction').textContent = action;
+    document.getElementById('kvReason').textContent = reason;
+
     document.getElementById('kvSuppressed').textContent =
       (metrics && metrics.suppressed !== undefined) ? (metrics.suppressed ? 'YES' : 'NO') : '-';
 
@@ -618,7 +688,6 @@
       (audit && audit.output_source) ? String(audit.output_source) :
       (data && data.output_source) ? String(data.output_source) : '-';
 
-    // LLM / Gate / Fallback (truthful display)
     const llmUsed = (audit && audit.llm_used !== undefined) ? audit.llm_used : (data && data.llm_used);
     document.getElementById('kvLLM').textContent =
       (llmUsed === true) ? 'used' : (llmUsed === false) ? 'not used' : '-';
@@ -633,8 +702,8 @@
     const fallbackReason = (audit && audit.fallback_reason) ? audit.fallback_reason : '';
     document.getElementById('kvFallback').textContent =
       fallbackUsed ? (fallbackReason ? fallbackReason : 'used') : 'no';
-    
-    return state;
+
+    return { state, reason, action };
   }
 
   async function analyzeText(){
@@ -650,6 +719,11 @@
     document.getElementById('baselineText').textContent = '(Analyzing...)';
     document.getElementById('govText').textContent = '(Analyzing...)';
 
+    // reset block note
+    const govNote = document.getElementById('govNote');
+    govNote.style.display = 'none';
+    document.getElementById('govNoteReason').textContent = '-';
+
     try{
       const resp = await fetch(API_URL, {
         method:'POST',
@@ -661,30 +735,33 @@
 
       const freq = data.freq_type || 'Unknown';
 
-      // Tone tag
       const dotClass = toneDotClass(freq);
       document.getElementById('toneTag').innerHTML = `<span class="dot ${dotClass}"></span><span>tone: ${freq}</span>`;
       document.getElementById('modeTag').textContent = `mode: ${data.mode || '-'}`;
 
-      // Decision Log Panel + badge
-      const decisionState = applyDecisionLog(data);
+      const { state: decisionState, reason: reasonCode } = applyDecisionLog(data);
       document.getElementById('confTag').textContent = safeConfText(data, decisionState);
 
-      // Layer 2: show real raw output ONLY if server provides it (RETURN_LLM_RAW=1)
+      // Layer 2: truth mode only if provided
       if (data.raw_ai_output && String(data.raw_ai_output).trim()){
         document.getElementById('baselineText').textContent = String(data.raw_ai_output).trim();
         document.getElementById('baselineBlurb').innerHTML =
-          "<strong>Truth mode:</strong> this is the actual raw output from the LLM (debug-only).";
+          "<strong>Truth mode:</strong> actual raw output from the LLM (debug-only).<br/><span style='opacity:.9;'>Public demo baseline uses simulated overreach.</span>";
       } else {
-        // fallback demo baseline (safe for public)
         document.getElementById('baselineText').textContent = generateBaseline(text, freq);
-        document.getElementById('baselineBlurb').innerHTML =
-          "<strong>Demo mode:</strong> typical ungoverned overreach behavior (public-safe).";
       }
 
-      // Layer 3 governed output (pipeline truth)
-      const governed = (data.repaired_text || data.original || '').trim();
-      document.getElementById('govText').textContent = governed || '(no output)';
+      // Layer 3 governed output
+      if (String(decisionState).toUpperCase() === 'BLOCK'){
+        document.getElementById('govText').textContent = "Output intercepted. Safe flow required.";
+        // show inline block note
+        govNote.style.display = 'block';
+        document.getElementById('govNoteReason').textContent = String(reasonCode || 'BLOCKED');
+        document.getElementById('govNoteFlow').textContent = "handoff required";
+      } else {
+        const governed = (data.repaired_text || data.original || '').trim();
+        document.getElementById('govText').textContent = governed || '(no output)';
+      }
 
       // Scenario hint
       const scenario = data.scenario || '';
