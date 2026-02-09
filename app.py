@@ -8,6 +8,9 @@ Continuum API - Hugging Face Spaces Compatible App
 
 PATCH:
 - ✅ Returns result["metrics"] to frontend (Decision Log Panel)
+- ✅ Exposes top-level compat truth: llm_used/cache_hit/model/usage/output_source
+- ✅ Handles BLOCK mode cleanly (no echo leakage; pipeline already enforces)
+- ✅ Avoids returning empty-string raw_ai_output (convert "" -> None)
 """
 
 import os
@@ -53,6 +56,14 @@ def _safe_conf(v, default: float = 0.0) -> float:
         return default
 
 
+def _none_if_empty(s: Optional[str]) -> Optional[str]:
+    if s is None:
+        return None
+    if isinstance(s, str) and s.strip() == "":
+        return None
+    return s
+
+
 # -------------------- Lifespan (HF-safe) --------------------
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -61,6 +72,8 @@ async def lifespan(app: FastAPI):
     logger.info("🚀 Starting Continuum API (HF Space)")
 
     pipeline = Z1Pipeline(debug=False)
+
+    # restore before logger init is optional; keep your original order if you prefer
     data_logger = DataLogger(log_dir="logs")
 
     token = os.environ.get("GITHUB_TOKEN")
@@ -72,6 +85,7 @@ async def lifespan(app: FastAPI):
             logger.info("📦 GitHub backup restored")
         except Exception as e:
             logger.warning(f"GitHub backup skipped: {e}")
+            github_backup = None
     else:
         github_backup = None
 
@@ -99,7 +113,8 @@ app.add_middleware(
 
 # -------------------- Models --------------------
 class AnalyzeRequest(BaseModel):
-    text: str = Field(..., min_length=1, max_length=1000)
+    # ✅ align with pipeline max_len default (2000)
+    text: str = Field(..., min_length=1, max_length=2000)
 
 
 class AnalyzeResponse(BaseModel):
@@ -112,13 +127,20 @@ class AnalyzeResponse(BaseModel):
     repaired_text: Optional[str] = None
     repair_note: Optional[str] = None
 
-    # Layer 2 truth (ONLY present when RETURN_LLM_RAW=1 and LLM was attempted)
+    # Layer 2 truth (ONLY present when RETURN_LLM_RAW=1 and LLM raw is available)
     raw_ai_output: Optional[str] = None
+
+    # ✅ Truth / compat fields (top-level, not guessed)
+    llm_used: Optional[bool] = None
+    cache_hit: Optional[bool] = None
+    model: str = ""
+    usage: Dict[str, Any] = {}
+    output_source: Optional[str] = None
 
     # What Playground expects
     audit: Dict[str, Any]
 
-    # NEW: Governance metrics for the Decision Log Panel
+    # Governance metrics for the Decision Log Panel
     metrics: Optional[Dict[str, Any]] = None
 
 
@@ -138,6 +160,7 @@ async def health():
     return {
         "pipeline_ready": pipeline is not None,
         "logger_ready": data_logger is not None,
+        "github_backup_enabled": github_backup is not None,
         "time": _utc_now(),
     }
 
@@ -153,7 +176,7 @@ async def analyze(req: AnalyzeRequest):
     if result.get("error"):
         raise HTTPException(400, result.get("reason", "pipeline_error"))
 
-    # Core fields
+    # Core fields (pipeline truth)
     original = result.get("original", req.text)
     freq_type = result.get("freq_type", "Unknown")
     mode = (result.get("mode") or "no-op").lower()
@@ -163,33 +186,43 @@ async def analyze(req: AnalyzeRequest):
     confidence_final = _safe_conf(conf_obj.get("final", result.get("confidence_final", 0.0)))
     confidence_classifier = _safe_conf(conf_obj.get("classifier", result.get("confidence_classifier", 0.0)))
 
-    # Output fields
+    # Output fields (truth)
     out = result.get("output") or {}
     scenario = out.get("scenario", result.get("scenario", "unknown"))
     repaired_text = out.get("repaired_text", result.get("repaired_text"))
     repair_note = out.get("repair_note", result.get("repair_note"))
 
-    # ✅ Layer 2 truth (debug only):
-    # raw aliases come from repairer and are already gated by RETURN_LLM_RAW=1
+    # ✅ Layer 2 truth (debug only; already gated in repairer)
     raw_ai_output = (
         out.get("raw_ai_output")
         or out.get("llm_raw_output")
-        or out.get("llm_raw_response")  # real one from repairer when enabled
+        or out.get("llm_raw_response")
         or result.get("raw_ai_output")
     )
+    raw_ai_output = _none_if_empty(raw_ai_output)
 
-    # ✅ Audit: PASS THROUGH THE TRUTH.
+    # ✅ Top-level compat truth (do not guess)
+    llm_used = result.get("llm_used", None)
+    cache_hit = result.get("cache_hit", None)
+    model_name = result.get("model", "") or ""
+    usage = result.get("usage", {}) if isinstance(result.get("usage", {}), dict) else {}
+    output_source = result.get("output_source", None)
+
+    # ✅ Audit: pass-through pipeline truth, add server overhead timing
     audit_top = result.get("audit") if isinstance(result.get("audit"), dict) else {}
-
     audit = dict(audit_top)
+
     audit.setdefault("timing_ms", {})
-    if isinstance(audit.get("timing_ms"), dict):
-        audit["timing_ms"]["total"] = int((time.time() - t0) * 1000)
-    else:
-        audit["timing_ms"] = {"total": int((time.time() - t0) * 1000)}
+    if not isinstance(audit.get("timing_ms"), dict):
+        audit["timing_ms"] = {}
+
+    server_overhead = int((time.time() - t0) * 1000)
+    # keep pipeline timing_ms.total if present; add server overhead explicitly
+    audit["timing_ms"].setdefault("total", server_overhead)
+    audit["timing_ms"]["server_overhead"] = server_overhead
     audit["server_time_utc"] = _utc_now()
 
-    # ✅ Metrics: truth from pipeline (Decision Log Panel)
+    # ✅ Metrics: pipeline truth
     metrics = result.get("metrics") if isinstance(result.get("metrics"), dict) else None
 
     return AnalyzeResponse(
@@ -202,6 +235,13 @@ async def analyze(req: AnalyzeRequest):
         repaired_text=repaired_text,
         repair_note=repair_note,
         raw_ai_output=raw_ai_output,
+
+        llm_used=llm_used,
+        cache_hit=cache_hit,
+        model=model_name,
+        usage=usage,
+        output_source=output_source,
+
         audit=audit,
         metrics=metrics,
     )
