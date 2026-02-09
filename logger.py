@@ -12,6 +12,10 @@ Design goals:
 - Works in Hugging Face Spaces using Secrets:
     GITHUB_TOKEN = GitHub Fine-grained PAT (Contents: Read & Write)
     GITHUB_REPO  = "owner/repo" (e.g., "Rin-Nomia/continuum-logs")
+
+Optional env flags:
+- GITHUB_BRANCH: branch to write to (default: "main")
+- LOG_STORE_TEXT: "1" to store raw input text in logs (default: off, store hash only)
 """
 
 from __future__ import annotations
@@ -20,8 +24,9 @@ import json
 import os
 import time
 import uuid
+import hashlib
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 import requests
 
@@ -35,6 +40,18 @@ def _utc_dates():
     )
 
 
+def _iso_utc_z() -> str:
+    return datetime.utcnow().isoformat() + "Z"
+
+
+def _store_text_enabled() -> bool:
+    return os.environ.get("LOG_STORE_TEXT", "").strip() == "1"
+
+
+def _sha256(s: str) -> str:
+    return hashlib.sha256((s or "").encode("utf-8")).hexdigest()
+
+
 class GitHubWriter:
     """
     Minimal GitHub Contents API writer.
@@ -44,25 +61,27 @@ class GitHubWriter:
     def __init__(self):
         self.github_token = os.environ.get("GITHUB_TOKEN")
         self.github_repo = os.environ.get("GITHUB_REPO")  # owner/repo
+        self.github_branch = os.environ.get("GITHUB_BRANCH", "main").strip() or "main"
 
         self.enabled = bool(self.github_token and self.github_repo)
 
-        # Use a stable UA to reduce GitHub API quirks
+        # Use stable headers to reduce GitHub API quirks
         self.headers = {
             "Accept": "application/vnd.github+json",
             "User-Agent": "continuum-api-logger",
+            "X-GitHub-Api-Version": "2022-11-28",
         }
         if self.github_token:
-            # GitHub accepts both "token" and "Bearer"; token is classic, Bearer is fine-grained friendly too.
+            # Fine-grained PAT compatible
             self.headers["Authorization"] = f"Bearer {self.github_token}"
 
-    def _put_file(self, path: str, payload: Dict[str, Any]) -> bool:
+    def _put_file(self, path: str, payload: Dict[str, Any]) -> Tuple[bool, str]:
         """
         Create/overwrite a single file via PUT.
-        Returns True on success.
+        Returns (ok, reason_code).
         """
         if not self.enabled:
-            return False
+            return False, "disabled"
 
         url = f"https://api.github.com/repos/{self.github_repo}/contents/{path}"
 
@@ -72,21 +91,41 @@ class GitHubWriter:
         data = {
             "message": f"Add log {payload.get('id', '')}".strip(),
             "content": b64,
+            "branch": self.github_branch,
         }
 
-        try:
-            r = requests.put(url, headers=self.headers, json=data, timeout=15)
-            # 201 created, 200 updated
-            if r.status_code in (200, 201):
-                return True
-            # Useful debug line (won't crash API)
-            print(f"[GitHubWriter] PUT failed {r.status_code}: {r.text[:200]}")
-            return False
-        except Exception as e:
-            print(f"[GitHubWriter] PUT exception: {e}")
-            return False
+        # small retry for transient errors (HF ↔ GitHub network / 429 / 5xx)
+        retries = 2
+        backoffs = [0.5, 1.0]
 
-    def write_event(self, category: str, event: Dict[str, Any], event_id: str) -> bool:
+        for attempt in range(retries + 1):
+            try:
+                r = requests.put(url, headers=self.headers, json=data, timeout=15)
+
+                if r.status_code in (200, 201):
+                    return True, "ok"
+
+                # Retry only on rate limit / server issues
+                if r.status_code in (429, 500, 502, 503, 504) and attempt < retries:
+                    time.sleep(backoffs[attempt] if attempt < len(backoffs) else 1.0)
+                    continue
+
+                # Non-retryable failure
+                # Keep message short (do not break API)
+                short = (r.text or "")[:200]
+                print(f"[GitHubWriter] PUT failed {r.status_code}: {short}")
+                return False, f"http_{r.status_code}"
+
+            except Exception as e:
+                print(f"[GitHubWriter] PUT exception: {e}")
+                if attempt < retries:
+                    time.sleep(backoffs[attempt] if attempt < len(backoffs) else 1.0)
+                    continue
+                return False, "exception"
+
+        return False, "unknown"
+
+    def write_event(self, category: str, event: Dict[str, Any], event_id: str) -> Tuple[bool, str]:
         """
         Write event as a unique file:
           logs/<YYYY-MM>/<YYYYMMDD>/<category>/<event_id>.json
@@ -116,7 +155,7 @@ class DataLogger:
         self._last_analysis_ts: Optional[str] = None
 
         if self.writer.enabled:
-            print(f"[DataLogger] GitHub logging enabled -> {os.environ.get('GITHUB_REPO')}")
+            print(f"[DataLogger] GitHub logging enabled -> {os.environ.get('GITHUB_REPO')} ({self.writer.github_branch})")
         else:
             print("[DataLogger] GitHub credentials not set; logging will be local-only (in-memory stats).")
 
@@ -125,26 +164,49 @@ class DataLogger:
         # short, URL-safe
         return f"{prefix}_{uuid.uuid4().hex[:12]}"
 
-    def log_analysis(self, input_text: str, output_result: Dict[str, Any], metadata: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    def log_analysis(
+        self,
+        input_text: str,
+        output_result: Dict[str, Any],
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
         """
         Create a new analysis log event and (optionally) ship to GitHub.
-        Returns a dict containing 'timestamp' which app.py uses as log_id.
+
+        Returns:
+          - log_id: event_id (stable identifier)
+          - created_at: UTC timestamp
+          - github_write: ok/failed/disabled
+          - github_error: reason code (if failed)
         """
-        ts = datetime.utcnow().isoformat() + "Z"
+        ts = _iso_utc_z()
         event_id = self._new_id("a")
+
+        # privacy-safe default: do not store raw text unless enabled
+        if _store_text_enabled():
+            input_obj = {
+                "text": input_text,
+                "text_length": len(input_text or ""),
+                "text_hash": _sha256(input_text or ""),
+            }
+        else:
+            input_obj = {
+                "text": None,
+                "text_length": len(input_text or ""),
+                "text_hash": _sha256(input_text or ""),
+            }
 
         payload = {
             "id": event_id,
             "timestamp": ts,
             "type": "analysis",
-            "input": {
-                "text": input_text,
-                "text_length": len(input_text),
-            },
+            "input": input_obj,
             "result": output_result,
             "metadata": metadata or {},
             "runtime": {
                 "source": "hf_space",
+                "service": "continuum-api",
+                "service_version": os.environ.get("SERVICE_VERSION", ""),
             },
         }
 
@@ -152,18 +214,23 @@ class DataLogger:
         self._analysis_count += 1
         self._last_analysis_ts = ts
 
-        # Write to GitHub if enabled (failure must not break API)
-        if self.writer.enabled:
-            ok = self.writer.write_event(category="analysis", event=payload, event_id=event_id)
-            if not ok:
-                # still return a log_id; API continues
-                payload["github_write"] = "failed"
+        github_write = "disabled"
+        github_error = None
 
-        # app.py expects log.get("timestamp") as log_id
-        return {"timestamp": event_id, "created_at": ts}
+        if self.writer.enabled:
+            ok, reason = self.writer.write_event(category="analysis", event=payload, event_id=event_id)
+            github_write = "ok" if ok else "failed"
+            github_error = None if ok else reason
+
+        return {
+            "log_id": event_id,
+            "created_at": ts,
+            "github_write": github_write,
+            "github_error": github_error,
+        }
 
     def log_feedback(self, log_id: str, accuracy: int, helpful: int, accepted: bool) -> Dict[str, Any]:
-        ts = datetime.utcnow().isoformat() + "Z"
+        ts = _iso_utc_z()
         event_id = self._new_id("f")
 
         payload = {
@@ -176,16 +243,30 @@ class DataLogger:
                 "helpful": helpful,
                 "accepted": accepted,
             },
+            "runtime": {
+                "source": "hf_space",
+                "service": "continuum-api",
+                "service_version": os.environ.get("SERVICE_VERSION", ""),
+            },
         }
 
         self._feedback_count += 1
 
-        if self.writer.enabled:
-            ok = self.writer.write_event(category="feedback", event=payload, event_id=event_id)
-            if not ok:
-                payload["github_write"] = "failed"
+        github_write = "disabled"
+        github_error = None
 
-        return {"status": "ok", "feedback_id": event_id, "created_at": ts}
+        if self.writer.enabled:
+            ok, reason = self.writer.write_event(category="feedback", event=payload, event_id=event_id)
+            github_write = "ok" if ok else "failed"
+            github_error = None if ok else reason
+
+        return {
+            "status": "ok",
+            "feedback_id": event_id,
+            "created_at": ts,
+            "github_write": github_write,
+            "github_error": github_error,
+        }
 
     def get_stats(self) -> Dict[str, Any]:
         """
@@ -196,6 +277,8 @@ class DataLogger:
             "logger": {
                 "enabled": self.writer.enabled,
                 "repo": os.environ.get("GITHUB_REPO") if self.writer.enabled else None,
+                "branch": self.writer.github_branch if self.writer.enabled else None,
+                "store_text": _store_text_enabled(),
             },
             "counts": {
                 "analyses_in_runtime": self._analysis_count,
@@ -209,9 +292,6 @@ class GitHubBackup:
     """
     Compatibility class: app.py calls GitHubBackup(...).restore()
     For this stable version, restore is intentionally a safe no-op.
-
-    If later you want "restore last logs to local", we can implement,
-    but HF Spaces typically don't rely on local disk logs.
     """
 
     def __init__(self, log_dir: str = "logs"):
