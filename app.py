@@ -2,15 +2,10 @@
 """
 Continuum API - Hugging Face Spaces Compatible App
 --------------------------------------------------
-- FastAPI lifespan (HF-safe)
-- Returns pipeline truth (no guessing at API layer)
-- Exposes raw LLM output ONLY when RETURN_LLM_RAW=1 (internal debug)
-
 PATCH:
-- ✅ Returns result["metrics"] to frontend (Decision Log Panel)
-- ✅ Exposes top-level compat truth: llm_used/cache_hit/model/usage/output_source
-- ✅ Handles BLOCK mode cleanly (no echo leakage; pipeline already enforces)
-- ✅ Avoids returning empty-string raw_ai_output (convert "" -> None)
+- ✅ usage uses default_factory (avoid mutable default)
+- ✅ timing: api_total / pipeline_total / server_overhead (truthful)
+- ✅ does NOT treat length_too_short as an error (pipeline now returns error=False)
 """
 
 import os
@@ -29,14 +24,12 @@ import uvicorn
 from pipeline.z1_pipeline import Z1Pipeline
 from logger import DataLogger, GitHubBackup
 
-# -------------------- Logging --------------------
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger("continuum-api")
 
-# -------------------- Globals --------------------
 pipeline: Optional[Z1Pipeline] = None
 data_logger: Optional[DataLogger] = None
 github_backup: Optional[GitHubBackup] = None
@@ -64,7 +57,6 @@ def _none_if_empty(s: Optional[str]) -> Optional[str]:
     return s
 
 
-# -------------------- Lifespan (HF-safe) --------------------
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global pipeline, data_logger, github_backup
@@ -72,8 +64,6 @@ async def lifespan(app: FastAPI):
     logger.info("🚀 Starting Continuum API (HF Space)")
 
     pipeline = Z1Pipeline(debug=False)
-
-    # restore before logger init is optional; keep your original order if you prefer
     data_logger = DataLogger(log_dir="logs")
 
     token = os.environ.get("GITHUB_TOKEN")
@@ -94,7 +84,6 @@ async def lifespan(app: FastAPI):
     logger.info("🧹 Shutdown complete")
 
 
-# -------------------- FastAPI App --------------------
 app = FastAPI(
     title="Continuum API",
     description="AI conversation risk governance (output-side)",
@@ -111,9 +100,7 @@ app.add_middleware(
 )
 
 
-# -------------------- Models --------------------
 class AnalyzeRequest(BaseModel):
-    # ✅ align with pipeline max_len default (2000)
     text: str = Field(..., min_length=1, max_length=2000)
 
 
@@ -127,32 +114,24 @@ class AnalyzeResponse(BaseModel):
     repaired_text: Optional[str] = None
     repair_note: Optional[str] = None
 
-    # Layer 2 truth (ONLY present when RETURN_LLM_RAW=1 and LLM raw is available)
     raw_ai_output: Optional[str] = None
 
-    # ✅ Truth / compat fields (top-level, not guessed)
     llm_used: Optional[bool] = None
     cache_hit: Optional[bool] = None
     model: str = ""
-    usage: Dict[str, Any] = {}
+
+    # ✅ no mutable default
+    usage: Dict[str, Any] = Field(default_factory=dict)
+
     output_source: Optional[str] = None
 
-    # What Playground expects
     audit: Dict[str, Any]
-
-    # Governance metrics for the Decision Log Panel
     metrics: Optional[Dict[str, Any]] = None
 
 
-# -------------------- Endpoints --------------------
 @app.get("/")
 async def root():
-    return {
-        "name": "Continuum API",
-        "status": "running",
-        "docs": "/docs",
-        "health": "/health",
-    }
+    return {"name": "Continuum API", "status": "running", "docs": "/docs", "health": "/health"}
 
 
 @app.get("/health")
@@ -170,29 +149,26 @@ async def analyze(req: AnalyzeRequest):
     if not pipeline:
         raise HTTPException(503, "Pipeline not ready")
 
-    t0 = time.time()
+    t_api_start = time.time()
     result = pipeline.process(req.text)
 
-    if result.get("error"):
+    # ✅ only treat as error when pipeline truly errors
+    if result.get("error") is True:
         raise HTTPException(400, result.get("reason", "pipeline_error"))
 
-    # Core fields (pipeline truth)
     original = result.get("original", req.text)
     freq_type = result.get("freq_type", "Unknown")
     mode = (result.get("mode") or "no-op").lower()
 
-    # Confidence fields (pipeline truth)
     conf_obj = result.get("confidence") or {}
     confidence_final = _safe_conf(conf_obj.get("final", result.get("confidence_final", 0.0)))
     confidence_classifier = _safe_conf(conf_obj.get("classifier", result.get("confidence_classifier", 0.0)))
 
-    # Output fields (truth)
     out = result.get("output") or {}
     scenario = out.get("scenario", result.get("scenario", "unknown"))
     repaired_text = out.get("repaired_text", result.get("repaired_text"))
     repair_note = out.get("repair_note", result.get("repair_note"))
 
-    # ✅ Layer 2 truth (debug only; already gated in repairer)
     raw_ai_output = (
         out.get("raw_ai_output")
         or out.get("llm_raw_output")
@@ -201,14 +177,13 @@ async def analyze(req: AnalyzeRequest):
     )
     raw_ai_output = _none_if_empty(raw_ai_output)
 
-    # ✅ Top-level compat truth (do not guess)
     llm_used = result.get("llm_used", None)
     cache_hit = result.get("cache_hit", None)
     model_name = result.get("model", "") or ""
     usage = result.get("usage", {}) if isinstance(result.get("usage", {}), dict) else {}
     output_source = result.get("output_source", None)
 
-    # ✅ Audit: pass-through pipeline truth, add server overhead timing
+    # ---- Audit: pipeline truth + API timing decomposition ----
     audit_top = result.get("audit") if isinstance(result.get("audit"), dict) else {}
     audit = dict(audit_top)
 
@@ -216,13 +191,25 @@ async def analyze(req: AnalyzeRequest):
     if not isinstance(audit.get("timing_ms"), dict):
         audit["timing_ms"] = {}
 
-    server_overhead = int((time.time() - t0) * 1000)
-    # keep pipeline timing_ms.total if present; add server overhead explicitly
-    audit["timing_ms"].setdefault("total", server_overhead)
-    audit["timing_ms"]["server_overhead"] = server_overhead
+    api_total = int((time.time() - t_api_start) * 1000)
+
+    # pipeline_total = audit.timing_ms.total if pipeline provided it, else processing_time_ms if present
+    pipeline_total = None
+    if isinstance(audit.get("timing_ms"), dict) and isinstance(audit["timing_ms"].get("total"), int):
+        pipeline_total = audit["timing_ms"]["total"]
+    elif isinstance(result.get("processing_time_ms"), int):
+        pipeline_total = result.get("processing_time_ms")
+
+    audit["timing_ms"]["api_total"] = api_total
+    if isinstance(pipeline_total, int):
+        audit["timing_ms"]["pipeline_total"] = pipeline_total
+        audit["timing_ms"]["server_overhead"] = max(0, api_total - pipeline_total)
+    else:
+        audit["timing_ms"]["pipeline_total"] = None
+        audit["timing_ms"]["server_overhead"] = None
+
     audit["server_time_utc"] = _utc_now()
 
-    # ✅ Metrics: pipeline truth
     metrics = result.get("metrics") if isinstance(result.get("metrics"), dict) else None
 
     return AnalyzeResponse(
@@ -247,11 +234,5 @@ async def analyze(req: AnalyzeRequest):
     )
 
 
-# -------------------- HF entrypoint --------------------
 if __name__ == "__main__":
-    uvicorn.run(
-        "app:app",
-        host="0.0.0.0",
-        port=7860,
-        log_level="info",
-    )
+    uvicorn.run("app:app", host="0.0.0.0", port=7860, log_level="info")
