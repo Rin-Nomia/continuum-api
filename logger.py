@@ -26,10 +26,11 @@ Compatibility:
 
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
 import os
 import uuid
-import hashlib
 from datetime import datetime
 from typing import Any, Dict, Optional
 
@@ -86,12 +87,22 @@ def _safe_str(v: Any, default: str = "") -> str:
 # ----------------------------
 _RISKY_TEXT_KEYS = {
     # common raw text keys
-    "text", "input_text", "original", "normalized", "repaired_text",
+    "text",
+    "input_text",
+    "original",
+    "normalized",
+    "repaired_text",
     # raw model output keys
-    "raw_ai_output", "llm_raw_response", "llm_raw_output",
+    "raw_ai_output",
+    "llm_raw_response",
+    "llm_raw_output",
     # sometimes nested payloads use these
-    "prompt", "messages", "completion", "response_text",
+    "prompt",
+    "messages",
+    "completion",
+    "response_text",
 }
+
 
 def _scrub_dict_content_free(obj: Any) -> Any:
     """
@@ -100,7 +111,7 @@ def _scrub_dict_content_free(obj: Any) -> Any:
     We do not store known raw-text keys.
     """
     if isinstance(obj, dict):
-        out = {}
+        out: Dict[str, Any] = {}
         for k, v in obj.items():
             if k in _RISKY_TEXT_KEYS:
                 continue
@@ -131,6 +142,7 @@ class GitHubWriter:
             "User-Agent": "continuum-api-logger",
         }
         if self.github_token:
+            # Fine-grained PAT works with Bearer
             self.headers["Authorization"] = f"Bearer {self.github_token}"
 
     def _put_file(self, path: str, payload: Dict[str, Any]) -> bool:
@@ -140,7 +152,7 @@ class GitHubWriter:
         url = f"https://api.github.com/repos/{self.github_repo}/contents/{path}"
 
         content_bytes = json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")
-        b64 = __import__("base64").b64encode(content_bytes).decode("utf-8")
+        b64 = base64.b64encode(content_bytes).decode("utf-8")
 
         data = {
             "message": f"Add log {payload.get('id', '')}".strip(),
@@ -212,7 +224,6 @@ class DataLogger:
         - input_text can be None. If None, we only trust fingerprints provided by output_result.
         - If input_text is provided, it is NEVER stored; only fingerprint+len computed.
         """
-
         ts = _utc_iso()
         event_id = self._new_id("a")
 
@@ -223,8 +234,9 @@ class DataLogger:
             # Try to use evidence fingerprints if app already computed them.
             # (Still scrubbed below; these keys are not raw text.)
             try:
-                in_fp = output_result.get("input_fp_sha256") if isinstance(output_result, dict) else None
-                in_len = output_result.get("input_length") if isinstance(output_result, dict) else None
+                if isinstance(output_result, dict):
+                    in_fp = output_result.get("input_fp_sha256")
+                    in_len = output_result.get("input_length")
             except Exception:
                 in_fp, in_len = None, None
         else:
@@ -235,7 +247,7 @@ class DataLogger:
         # but we still enforce a safety scrub for known risky keys (defense-in-depth).
         safe_result = _scrub_dict_content_free(dict(output_result or {}))
 
-        payload = {
+        payload: Dict[str, Any] = {
             "id": event_id,
             "timestamp": ts,
             "type": "analysis",
