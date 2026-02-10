@@ -17,6 +17,8 @@ PATCH:
 - ✅ Do not overwrite pipeline timing_ms.total; only add server_overhead
 """
 
+from __future__ import annotations
+
 import os
 import time
 import math
@@ -296,9 +298,10 @@ async def analyze(req: AnalyzeRequest):
             }
 
             # IMPORTANT: do NOT pass raw input into logger
+            # logger must support None (we'll fix in logger.py next)
             log_res = data_logger.log_analysis(
-                input_text=None,            # logger must support None (we'll fix in logger.py next)
-                output_result=evidence,     # already safe
+                input_text=None,
+                output_result=evidence,
                 metadata=meta
             )
 
