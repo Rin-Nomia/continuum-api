@@ -96,11 +96,12 @@ def _safe_str(v, default: str = "") -> str:
 
 # -------------------- Content-derived scrub (hard privacy line) --------------------
 # Anything that can leak or reconstruct text fragments must be scrubbed.
-CONTENT_DERIVED_KEYS = {
+# NOTE: We normalize keys to lower-case and compare against LOWERED set.
+CONTENT_DERIVED_KEYS_LOWER = {
     # generic
     "matched", "matches", "match", "keywords", "keyword", "tokens", "token",
     "spans", "span", "entities", "entity", "phrases", "phrase",
-    # your known fields
+    # known fields
     "matched_keywords", "detected_keywords", "oos_matched", "trigger_words",
     "trigger_word", "trigger", "triggers",
     # common LLM / prompt artifacts
@@ -121,7 +122,8 @@ def scrub_no_content_derived(obj: Any) -> Any:
         out: Dict[str, Any] = {}
         for k, v in obj.items():
             k_str = str(k)
-            if k_str in CONTENT_DERIVED_KEYS:
+            k_low = k_str.strip().lower()
+            if k_low in CONTENT_DERIVED_KEYS_LOWER:
                 continue
             out[k_str] = scrub_no_content_derived(v)
         return out
