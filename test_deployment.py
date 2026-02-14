@@ -64,8 +64,9 @@ def test_analyze():
         
         if response.status_code == 200:
             result = response.json()
+            print(f"✅ Decision State: {result.get('decision_state')}")
             print(f"✅ Detected Tone: {result.get('freq_type')}")
-            print(f"✅ Confidence: {result.get('confidence')}")
+            print(f"✅ Confidence: {result.get('confidence_final')}")
             print(f"✅ Scenario: {result.get('scenario')}")
             return True
         else:

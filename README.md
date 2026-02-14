@@ -48,11 +48,16 @@ This design prevents over-correction and preserves the user’s original intent.
 
 ---
 
-## 🧪 Output Modes
+## 🧪 Decision Contract (Public API)
 
-- **repair** → Tone is adjusted while preserving meaning
-- **suggest** → Original text kept, guidance provided
-- **no-op** → Tone is already safe; no change applied
+Public responses are normalized to one governance decision:
+
+- **ALLOW** → tone is safe, pass-through behavior
+- **GUIDE** → constrained guidance / rewrite path applied
+- **BLOCK** → out-of-scope or hard safety boundary
+
+> Internal pipeline modes (`repair` / `suggest` / `no-op` / `block`) remain runtime truth,  
+> but external API clients should consume `decision_state` only.
 
 ---
 
@@ -105,10 +110,10 @@ Continuum is **not designed** to handle:
 
 In such cases, the system will trigger an **Out-of-Scope Safety Gate** and return:
 
+- `decision_state: "BLOCK"`
 - `freq_type: "OutOfScope"`
-- `mode: "no-op"`
 - `scenario: "crisis_out_of_scope"`
-- No repaired output
+- `repaired_text: ""`
 
 > **Design principle:**  
 > Continuum only intervenes where **tone affects AI response quality**,  
@@ -135,7 +140,11 @@ Continuum is designed as a **pre-LLM tone firewall**, not a replacement for the 
 
 ```bash
 GET /health
-Analyze Single Sentence
+```
+
+### Analyze Single Sentence
+
+```bash
 POST /api/v1/analyze
 Body:
 {
@@ -143,12 +152,28 @@ Body:
 }
 Response Example:
 {
+  "decision_state": "GUIDE",
   "freq_type": "Anxious",
-  "confidence": 0.73,
+  "confidence_final": 0.73,
+  "confidence_classifier": 0.66,
   "scenario": "general",
-  "repaired_text": "I'm here with you. We can take this step by step.",
-  "repair_note": null
+  "repaired_text": "Let's slow this down and clarify one step at a time.",
+  "repair_note": null,
+  "privacy_guard_ok": true
 }
+```
+
+### Operations Metrics
+
+```bash
+GET /api/v1/ops/metrics
+```
+
+Returns aggregated operability indicators:
+- decision_state distribution
+- p50/p95/p99 latency
+- llm usage rate
+- out-of-scope hit rate
 
 ⸻
 

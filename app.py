@@ -18,7 +18,8 @@ import time
 import math
 import logging
 import hashlib
-from typing import Optional, Dict, Any, Tuple, List, Literal
+from collections import deque
+from typing import Optional, Dict, Any, Tuple, List, Literal, Deque
 from datetime import datetime, timezone
 from contextlib import asynccontextmanager
 
@@ -28,7 +29,13 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 import uvicorn
 
-from pipeline.z1_pipeline import Z1Pipeline
+PIPELINE_IMPORT_ERROR: Optional[str] = None
+try:
+    from pipeline.z1_pipeline import Z1Pipeline
+except Exception as e:
+    # Keep API process alive and surface precise operability error via health/status.
+    Z1Pipeline = None  # type: ignore[assignment,misc]
+    PIPELINE_IMPORT_ERROR = f"{type(e).__name__}: {e}"
 from logger import DataLogger, GitHubBackup
 
 # -------------------- Logging --------------------
@@ -41,6 +48,8 @@ logger = logging.getLogger("continuum-api")
 # -------------------- Versioning --------------------
 APP_VERSION = os.environ.get("APP_VERSION", "2.2.4-hf").strip() or "2.2.4-hf"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+PIPELINE_MIN_INPUT_LENGTH = int(os.environ.get("PIPELINE_MIN_INPUT_LENGTH", "5"))
+PIPELINE_MAX_INPUT_LENGTH = int(os.environ.get("PIPELINE_MAX_INPUT_LENGTH", "500"))
 
 # -------------------- Globals --------------------
 pipeline: Optional[Z1Pipeline] = None
@@ -51,6 +60,13 @@ last_decision_time: Optional[str] = None
 
 ALLOWED_DECISION_STATES = {"ALLOW", "GUIDE", "BLOCK"}
 PRIVACY_GUARD_OK = True
+LATENCY_WINDOW_SIZE = int(os.environ.get("LATENCY_WINDOW_SIZE", "2000"))
+
+runtime_decision_counts: Dict[str, int] = {"ALLOW": 0, "GUIDE": 0, "BLOCK": 0}
+runtime_total_analyses: int = 0
+runtime_llm_used_true: int = 0
+runtime_oos_hits: int = 0
+runtime_latency_ms: Deque[int] = deque(maxlen=LATENCY_WINDOW_SIZE)
 
 
 def _utc_now() -> str:
@@ -110,17 +126,7 @@ def _decision_from_mode(mode: str) -> str:
     return "GUIDE"
 
 
-def _normalize_decision_state(
-    decision_state: Any,
-    *,
-    mode: str,
-    freq_type: str,
-    scenario: str,
-) -> str:
-    ds = _safe_str(decision_state, "").strip().upper()
-    if ds in ALLOWED_DECISION_STATES:
-        return ds
-
+def _decision_state_from_truth(*, mode: str, freq_type: str, scenario: str) -> str:
     if _safe_str(freq_type, "") == "OutOfScope":
         return "BLOCK"
     sc = _safe_str(scenario, "").strip().lower()
@@ -128,6 +134,24 @@ def _normalize_decision_state(
         return "BLOCK"
 
     return _decision_from_mode(mode)
+
+
+def _percentile(values: List[int], p: float) -> Optional[float]:
+    if not values:
+        return None
+    if p <= 0:
+        return float(min(values))
+    if p >= 100:
+        return float(max(values))
+    sv = sorted(values)
+    k = (len(sv) - 1) * (p / 100.0)
+    f = math.floor(k)
+    c = math.ceil(k)
+    if f == c:
+        return float(sv[int(k)])
+    d0 = sv[f] * (c - k)
+    d1 = sv[c] * (k - f)
+    return float(d0 + d1)
 
 
 # -------------------- Content-derived scrub (hard privacy line) --------------------
@@ -310,8 +334,11 @@ async def lifespan(app: FastAPI):
     global pipeline, data_logger, github_backup
 
     logger.info("🚀 Starting Continuum API (HF Space)")
-
-    pipeline = Z1Pipeline(debug=False)
+    if PIPELINE_IMPORT_ERROR:
+        logger.error(f"Pipeline import failed: {PIPELINE_IMPORT_ERROR}")
+        pipeline = None
+    else:
+        pipeline = Z1Pipeline(debug=False)
     data_logger = DataLogger(log_dir="logs")
 
     token = os.environ.get("GITHUB_TOKEN")
@@ -351,7 +378,7 @@ app.add_middleware(
 
 # -------------------- Models --------------------
 class AnalyzeRequest(BaseModel):
-    text: str = Field(..., min_length=1, max_length=2000)
+    text: str = Field(..., min_length=PIPELINE_MIN_INPUT_LENGTH, max_length=PIPELINE_MAX_INPUT_LENGTH)
 
 
 class AnalyzeResponse(BaseModel):
@@ -398,6 +425,7 @@ async def root():
 async def health():
     return {
         "pipeline_ready": pipeline is not None,
+        "pipeline_import_error": PIPELINE_IMPORT_ERROR,
         "logger_ready": data_logger is not None,
         "github_backup_enabled": github_backup is not None,
         "time": _utc_now(),
@@ -414,11 +442,51 @@ async def status_dashboard():
 async def runtime_status():
     return {
         "started": (pipeline is not None) and (data_logger is not None),
+        "pipeline_import_error": PIPELINE_IMPORT_ERROR,
         "last_decision_state": last_decision_state,
         "last_decision_time": last_decision_time,
         "privacy_guard_ok": PRIVACY_GUARD_OK,
         "time": _utc_now(),
         "version": APP_VERSION,
+    }
+
+
+@app.get("/api/v1/ops/metrics")
+async def ops_metrics():
+    total = runtime_total_analyses
+    dist = {
+        k: {
+            "count": int(v),
+            "rate": (float(v) / float(total)) if total > 0 else 0.0,
+        }
+        for k, v in runtime_decision_counts.items()
+    }
+    lat_samples = list(runtime_latency_ms)
+    p95 = _percentile(lat_samples, 95.0)
+    p50 = _percentile(lat_samples, 50.0)
+    p99 = _percentile(lat_samples, 99.0)
+
+    return {
+        "ok": True,
+        "time": _utc_now(),
+        "version": APP_VERSION,
+        "window_size": len(lat_samples),
+        "totals": {
+            "analyses": total,
+            "llm_used_true": runtime_llm_used_true,
+            "oos_hits": runtime_oos_hits,
+        },
+        "decision_state_distribution": dist,
+        "rates": {
+            "llm_usage_rate": (float(runtime_llm_used_true) / float(total)) if total > 0 else 0.0,
+            "oos_hit_rate": (float(runtime_oos_hits) / float(total)) if total > 0 else 0.0,
+        },
+        "latency_ms": {
+            "p50": p50,
+            "p95": p95,
+            "p99": p99,
+            "max": float(max(lat_samples)) if lat_samples else None,
+        },
     }
 
 
@@ -472,9 +540,13 @@ async def feedback(req: FeedbackRequest):
 @app.post("/api/v1/analyze", response_model=AnalyzeResponse)
 async def analyze(req: AnalyzeRequest):
     global last_decision_state, last_decision_time
+    global runtime_total_analyses, runtime_llm_used_true, runtime_oos_hits
 
     if not pipeline:
-        raise HTTPException(503, "Pipeline not ready")
+        detail = "Pipeline not ready"
+        if PIPELINE_IMPORT_ERROR:
+            detail = f"pipeline_import_failed:{PIPELINE_IMPORT_ERROR}"
+        raise HTTPException(503, detail)
 
     t0 = time.time()
     result = pipeline.process(req.text)
@@ -523,13 +595,19 @@ async def analyze(req: AnalyzeRequest):
     # Metrics: pipeline truth
     metrics = result.get("metrics") if isinstance(result.get("metrics"), dict) else {}
     metrics = dict(metrics)
-    decision_state = _normalize_decision_state(
-        metrics.get("decision_state"),
+    decision_state = _decision_state_from_truth(
         mode=mode,
         freq_type=freq_type,
         scenario=scenario,
     )
+    upstream_state = _safe_str(metrics.get("decision_state"), "").strip().upper()
+    if upstream_state in ALLOWED_DECISION_STATES and upstream_state != decision_state:
+        logger.warning(
+            f"decision_state corrected by app truth: upstream={upstream_state}, normalized={decision_state}"
+        )
     metrics["decision_state"] = decision_state
+    if "action" not in metrics:
+        metrics["action"] = "intercept" if decision_state == "BLOCK" else ("pass" if decision_state == "ALLOW" else "constrain")
 
     # Fingerprint (truth)
     pipeline_fp = (
@@ -577,6 +655,13 @@ async def analyze(req: AnalyzeRequest):
 
     last_decision_state = decision_state
     last_decision_time = _utc_now()
+    runtime_total_analyses += 1
+    runtime_decision_counts[decision_state] = int(runtime_decision_counts.get(decision_state, 0)) + 1
+    if bool(llm_used):
+        runtime_llm_used_true += 1
+    if freq_type == "OutOfScope" or ("out_of_scope" in _safe_str(scenario, "").lower()) or ("crisis" in _safe_str(scenario, "").lower()):
+        runtime_oos_hits += 1
+    runtime_latency_ms.append(max(0, server_overhead))
 
     return AnalyzeResponse(
         decision_state=decision_state,
