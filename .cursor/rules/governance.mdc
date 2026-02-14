@@ -1,0 +1,7 @@
+# 治理總規則
+description: 全域隱私與決策輸出硬性規範
+
+# 核心指令
+- 嚴禁存入使用者原始對話 (raw input)。
+- 日誌必須 Hash 化。
+- 決策只能輸出 ALLOW, GUIDE, BLOCK。
