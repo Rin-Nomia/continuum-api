@@ -18,12 +18,13 @@ import time
 import math
 import logging
 import hashlib
-from typing import Optional, Dict, Any, Tuple, List
+from typing import Optional, Dict, Any, Tuple, List, Literal
 from datetime import datetime, timezone
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 import uvicorn
 
@@ -39,11 +40,17 @@ logger = logging.getLogger("continuum-api")
 
 # -------------------- Versioning --------------------
 APP_VERSION = os.environ.get("APP_VERSION", "2.2.4-hf").strip() or "2.2.4-hf"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # -------------------- Globals --------------------
 pipeline: Optional[Z1Pipeline] = None
 data_logger: Optional[DataLogger] = None
 github_backup: Optional[GitHubBackup] = None
+last_decision_state: Optional[str] = None
+last_decision_time: Optional[str] = None
+
+ALLOWED_DECISION_STATES = {"ALLOW", "GUIDE", "BLOCK"}
+PRIVACY_GUARD_OK = True
 
 
 def _utc_now() -> str:
@@ -92,6 +99,35 @@ def _safe_str(v, default: str = "") -> str:
         return str(v)
     except Exception:
         return default
+
+
+def _decision_from_mode(mode: str) -> str:
+    m = _safe_str(mode, "").strip().lower()
+    if m == "no-op":
+        return "ALLOW"
+    if m == "block":
+        return "BLOCK"
+    return "GUIDE"
+
+
+def _normalize_decision_state(
+    decision_state: Any,
+    *,
+    mode: str,
+    freq_type: str,
+    scenario: str,
+) -> str:
+    ds = _safe_str(decision_state, "").strip().upper()
+    if ds in ALLOWED_DECISION_STATES:
+        return ds
+
+    if _safe_str(freq_type, "") == "OutOfScope":
+        return "BLOCK"
+    sc = _safe_str(scenario, "").strip().lower()
+    if "out_of_scope" in sc or "crisis" in sc:
+        return "BLOCK"
+
+    return _decision_from_mode(mode)
 
 
 # -------------------- Content-derived scrub (hard privacy line) --------------------
@@ -319,16 +355,14 @@ class AnalyzeRequest(BaseModel):
 
 
 class AnalyzeResponse(BaseModel):
-    original: str
+    decision_state: Literal["ALLOW", "GUIDE", "BLOCK"]
     freq_type: str
-    mode: str
     confidence_final: float
     confidence_classifier: Optional[float] = None
     scenario: str
     repaired_text: Optional[str] = None
     repair_note: Optional[str] = None
-
-    raw_ai_output: Optional[str] = None  # debug only
+    privacy_guard_ok: bool = True
 
     llm_used: Optional[bool] = None
     cache_hit: Optional[bool] = None
@@ -355,6 +389,7 @@ async def root():
         "status": "running",
         "docs": "/docs",
         "health": "/health",
+        "status_dashboard": "/status",
         "version": APP_VERSION,
     }
 
@@ -365,6 +400,23 @@ async def health():
         "pipeline_ready": pipeline is not None,
         "logger_ready": data_logger is not None,
         "github_backup_enabled": github_backup is not None,
+        "time": _utc_now(),
+        "version": APP_VERSION,
+    }
+
+
+@app.get("/status", include_in_schema=False)
+async def status_dashboard():
+    return FileResponse(os.path.join(BASE_DIR, "status.html"))
+
+
+@app.get("/api/v1/status")
+async def runtime_status():
+    return {
+        "started": (pipeline is not None) and (data_logger is not None),
+        "last_decision_state": last_decision_state,
+        "last_decision_time": last_decision_time,
+        "privacy_guard_ok": PRIVACY_GUARD_OK,
         "time": _utc_now(),
         "version": APP_VERSION,
     }
@@ -419,6 +471,8 @@ async def feedback(req: FeedbackRequest):
 
 @app.post("/api/v1/analyze", response_model=AnalyzeResponse)
 async def analyze(req: AnalyzeRequest):
+    global last_decision_state, last_decision_time
+
     if not pipeline:
         raise HTTPException(503, "Pipeline not ready")
 
@@ -429,7 +483,6 @@ async def analyze(req: AnalyzeRequest):
         raise HTTPException(400, result.get("reason", "pipeline_error"))
 
     # -------------------- Core truth --------------------
-    original = result.get("original", req.text)
     freq_type = result.get("freq_type", "Unknown")
     mode = (result.get("mode") or "no-op").lower()
 
@@ -448,15 +501,6 @@ async def analyze(req: AnalyzeRequest):
     # Ensure BLOCK stays explicit (""), not None
     if repaired_text is None and mode == "block":
         repaired_text = ""
-
-    # Layer 2 truth (debug only; repairer already gated)
-    raw_ai_output = (
-        out.get("raw_ai_output")
-        or out.get("llm_raw_output")
-        or out.get("llm_raw_response")
-        or result.get("raw_ai_output")
-    )
-    raw_ai_output = _none_if_empty(raw_ai_output)
 
     # Top-level compat truth (do not guess; only type-normalize)
     llm_used = _bool_or_none(result.get("llm_used", None))
@@ -478,6 +522,14 @@ async def analyze(req: AnalyzeRequest):
 
     # Metrics: pipeline truth
     metrics = result.get("metrics") if isinstance(result.get("metrics"), dict) else {}
+    metrics = dict(metrics)
+    decision_state = _normalize_decision_state(
+        metrics.get("decision_state"),
+        mode=mode,
+        freq_type=freq_type,
+        scenario=scenario,
+    )
+    metrics["decision_state"] = decision_state
 
     # Fingerprint (truth)
     pipeline_fp = (
@@ -523,16 +575,18 @@ async def analyze(req: AnalyzeRequest):
         except Exception as e:
             logger.warning(f"Logging skipped: {e}")
 
+    last_decision_state = decision_state
+    last_decision_time = _utc_now()
+
     return AnalyzeResponse(
-        original=original,
+        decision_state=decision_state,
         freq_type=freq_type,
-        mode=mode,
         confidence_final=confidence_final,
         confidence_classifier=confidence_classifier,
         scenario=scenario,
         repaired_text=repaired_text,
         repair_note=repair_note,
-        raw_ai_output=raw_ai_output,
+        privacy_guard_ok=PRIVACY_GUARD_OK,
 
         llm_used=llm_used,
         cache_hit=cache_hit,

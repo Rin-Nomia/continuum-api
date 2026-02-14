@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Continuum 狀態儀表板</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card: #111827;
+      --text: #e5e7eb;
+      --muted: #9ca3af;
+      --allow: #16a34a;
+      --guide: #d97706;
+      --block: #dc2626;
+      --unknown: #374151;
+      --ok: #22c55e;
+      --bad: #ef4444;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      color: var(--text);
+      background: linear-gradient(180deg, #020617 0%, var(--bg) 100%);
+      min-height: 100vh;
+    }
+    .wrap {
+      max-width: 860px;
+      margin: 0 auto;
+      padding: 24px 16px 36px;
+    }
+    h1 {
+      margin: 0 0 6px;
+      font-size: 28px;
+    }
+    .sub {
+      color: var(--muted);
+      margin: 0 0 18px;
+      font-size: 14px;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 12px;
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid #1f2937;
+      border-radius: 12px;
+      padding: 14px;
+      min-height: 140px;
+    }
+    .label {
+      color: var(--muted);
+      font-size: 13px;
+      margin-bottom: 8px;
+    }
+    .value {
+      font-size: 22px;
+      font-weight: 700;
+    }
+    .decision {
+      border-radius: 10px;
+      padding: 14px 12px;
+      text-align: center;
+      font-size: 40px;
+      font-weight: 800;
+      letter-spacing: 1px;
+      margin-top: 6px;
+      background: var(--unknown);
+    }
+    .decision.allow { background: var(--allow); }
+    .decision.guide { background: var(--guide); }
+    .decision.block { background: var(--block); }
+    .privacy.ok { color: var(--ok); }
+    .privacy.bad { color: var(--bad); }
+    .meta {
+      margin-top: 14px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Continuum 顯化儀表板</h1>
+    <p class="sub">每 5 秒自動更新（來源：/api/v1/status）</p>
+
+    <div class="grid">
+      <section class="card">
+        <div class="label">目前系統是否已啟動</div>
+        <div id="started" class="value">讀取中...</div>
+      </section>
+
+      <section class="card">
+        <div class="label">隱私防線是否正常運作</div>
+        <div id="privacy" class="value privacy">檢查中...</div>
+      </section>
+    </div>
+
+    <section class="card" style="margin-top:12px;">
+      <div class="label">最後一筆決策狀態</div>
+      <div id="decision" class="decision">N/A</div>
+      <div id="decisionTime" class="meta">最後更新：-</div>
+    </section>
+
+    <div id="error" class="meta"></div>
+  </div>
+
+  <script>
+    const endpoint = "/api/v1/status";
+
+    function decisionClass(state) {
+      if (state === "ALLOW") return "allow";
+      if (state === "GUIDE") return "guide";
+      if (state === "BLOCK") return "block";
+      return "";
+    }
+
+    function render(data) {
+      const started = Boolean(data && data.started);
+      const privacy = Boolean(data && data.privacy_guard_ok);
+      const rawState = data && data.last_decision_state ? String(data.last_decision_state).toUpperCase() : "N/A";
+      const state = (rawState === "ALLOW" || rawState === "GUIDE" || rawState === "BLOCK") ? rawState : "N/A";
+      const time = data && data.last_decision_time ? data.last_decision_time : "-";
+
+      const startedEl = document.getElementById("started");
+      startedEl.textContent = started ? "已啟動" : "未啟動";
+      startedEl.style.color = started ? "var(--ok)" : "var(--bad)";
+
+      const privacyEl = document.getElementById("privacy");
+      privacyEl.className = "value privacy " + (privacy ? "ok" : "bad");
+      privacyEl.innerHTML = privacy ? "&#10003; 正常運作" : "&#10007; 異常";
+
+      const decisionEl = document.getElementById("decision");
+      decisionEl.className = "decision " + decisionClass(state);
+      decisionEl.textContent = state;
+
+      const decisionTimeEl = document.getElementById("decisionTime");
+      decisionTimeEl.textContent = "最後更新：" + time;
+    }
+
+    async function refresh() {
+      const errEl = document.getElementById("error");
+      try {
+        const res = await fetch(endpoint, { cache: "no-store" });
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        const data = await res.json();
+        render(data);
+        errEl.textContent = "";
+      } catch (err) {
+        errEl.textContent = "狀態抓取失敗：" + err.message;
+      }
+    }
+
+    refresh();
+    setInterval(refresh, 5000);
+  </script>
+</body>
+</html>
