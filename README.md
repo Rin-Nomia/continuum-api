@@ -15,6 +15,8 @@ pinned: false
 - Stability Acceptance (1200 decisions, 100% consistency): [docs/STABILITY_ACCEPTANCE_REPORT_V1.md](docs/STABILITY_ACCEPTANCE_REPORT_V1.md)
 - Technical Whitepaper Summary: [docs/TECHNICAL_WHITEPAPER_SUMMARY_V1.md](docs/TECHNICAL_WHITEPAPER_SUMMARY_V1.md)
 - Commercial Billing & License Ops: [docs/COMMERCIAL_BILLING_OPERATIONS_V1.md](docs/COMMERCIAL_BILLING_OPERATIONS_V1.md)
+- Finance Reconciliation SOP: [docs/FINANCE_RECONCILIATION_SOP_V1.md](docs/FINANCE_RECONCILIATION_SOP_V1.md)
+- License Template: [license/sample_license_template.json](license/sample_license_template.json)
 
 ---
 

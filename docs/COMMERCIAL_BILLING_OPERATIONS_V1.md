@@ -60,6 +60,9 @@ python scripts/generate_license_file.py \
   --quota-limit 100000
 ```
 
+Template payload:
+- `license/sample_license_template.json`
+
 ---
 
 ## 3. Signed usage summary outputs
@@ -123,6 +126,9 @@ python scripts/verify_usage_summary_sig.py \
   --sig logs/usage/2026-02.summary.sig \
   --key "$USAGE_SIGNING_KEY"
 ```
+
+Finance handoff SOP:
+- `docs/FINANCE_RECONCILIATION_SOP_V1.md`
 
 ---
 

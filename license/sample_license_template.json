@@ -1,0 +1,10 @@
+{
+  "license_id": "customer-acme-prod-001",
+  "customer_name": "Acme Corp",
+  "plan": "enterprise",
+  "issued_at": "2026-02-15",
+  "expiry_date": "2027-02-14",
+  "quota_limit": 1200000,
+  "currency": "USD",
+  "notes": "Template only. Encrypt this payload before production use."
+}
