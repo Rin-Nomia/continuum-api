@@ -37,6 +37,7 @@ import hashlib
 import hmac
 import json
 import os
+import sqlite3
 import threading
 import uuid
 from datetime import datetime
@@ -327,10 +328,8 @@ class DataLogger:
         # Signed usage accounting (content-free)
         self._usage_signing_key = os.environ.get("USAGE_SIGNING_KEY", "").strip() or self._salt
         self._usage_lock = threading.Lock()
-        self._active_month = _utc_dates()[0]
-        self._usage_by_month: Dict[str, Dict[str, int]] = {
-            self._active_month: {"analysis_count": 0, "feedback_count": 0}
-        }
+        self.usage_db_path = os.environ.get("USAGE_DB_PATH", os.path.join(self.log_dir, "usage.db"))
+        self._init_usage_db()
 
     @staticmethod
     def _new_id(prefix: str) -> str:
@@ -385,6 +384,16 @@ class DataLogger:
         self._analysis_count += 1
         self._last_analysis_ts = ts
         self._record_usage("analysis_count")
+        self._append_usage_event(
+            event_id=event_id,
+            event_type="analysis",
+            decision_state=self._event_decision_state(safe_result),
+            mode=_safe_str(safe_result.get("mode"), ""),
+            reason_code=self._event_reason_code(safe_result),
+            llm_used=bool(safe_result.get("llm_used")),
+            cache_hit=bool(safe_result.get("cache_hit")),
+            latency_ms=self._event_latency_ms(safe_result),
+        )
 
         if self.writer.enabled:
             ok = self.writer.write_event(category="analysis", event=payload, event_id=event_id)
@@ -412,6 +421,16 @@ class DataLogger:
 
         self._feedback_count += 1
         self._record_usage("feedback_count")
+        self._append_usage_event(
+            event_id=event_id,
+            event_type="feedback",
+            decision_state="FEEDBACK",
+            mode="",
+            reason_code="",
+            llm_used=False,
+            cache_hit=False,
+            latency_ms=None,
+        )
 
         if self.writer.enabled:
             ok = self.writer.write_event(category="feedback", event=payload, event_id=event_id)
@@ -419,6 +438,56 @@ class DataLogger:
                 payload["github_write"] = "failed"
 
         return {"status": "ok", "feedback_id": event_id, "created_at": ts}
+
+    def log_error_event(self, reason_code: str) -> Dict[str, Any]:
+        ts = _utc_iso()
+        event_id = self._new_id("e")
+        self._analysis_count += 1
+        self._last_analysis_ts = ts
+        self._record_usage("analysis_count")
+        self._append_usage_event(
+            event_id=event_id,
+            event_type="error",
+            decision_state="ERROR",
+            mode="error",
+            reason_code=_safe_str(reason_code, "pipeline_error"),
+            llm_used=False,
+            cache_hit=False,
+            latency_ms=None,
+        )
+        return {"status": "ok", "error_event_id": event_id, "created_at": ts}
+
+    def _event_decision_state(self, safe_result: Dict[str, Any]) -> str:
+        decision = _safe_str((safe_result or {}).get("decision_state"), "").upper()
+        if decision in {"ALLOW", "GUIDE", "BLOCK", "ERROR"}:
+            return decision
+        mode = _safe_str((safe_result or {}).get("mode"), "").lower()
+        if mode in {"block"}:
+            return "BLOCK"
+        if mode in {"suggest", "repair"}:
+            return "GUIDE"
+        if mode in {"no-op", "noop", "allow", "pass"}:
+            return "ALLOW"
+        if mode in {"error", "failed"}:
+            return "ERROR"
+        return "ERROR"
+
+    def _event_reason_code(self, safe_result: Dict[str, Any]) -> str:
+        metrics = (safe_result or {}).get("metrics") or {}
+        return _safe_str(metrics.get("reason_code"), "")
+
+    def _event_latency_ms(self, safe_result: Dict[str, Any]) -> Optional[int]:
+        metrics = (safe_result or {}).get("metrics") or {}
+        value = metrics.get("latency_ms")
+        if value is None:
+            timing = ((safe_result or {}).get("audit") or {}).get("timing_ms") or {}
+            value = timing.get("total")
+        if value is None:
+            return None
+        try:
+            return int(float(value))
+        except (TypeError, ValueError):
+            return None
 
     def get_stats(self) -> Dict[str, Any]:
         usage_snapshot = self.get_usage_snapshot()
@@ -444,18 +513,21 @@ class DataLogger:
         return _utc_dates()[0]
 
     def _record_usage(self, key: str) -> None:
+        _ = key
         to_finalize = None
         with self._usage_lock:
             now_month = self._current_month()
-            if now_month not in self._usage_by_month:
-                self._usage_by_month[now_month] = {"analysis_count": 0, "feedback_count": 0}
-            if now_month != self._active_month:
-                to_finalize = self._active_month
-                self._active_month = now_month
-            month_obj = self._usage_by_month[now_month]
-            month_obj[key] = int(month_obj.get(key, 0)) + 1
+            conn = self._db_connect()
+            try:
+                active_month = self._meta_get(conn, "active_month", now_month)
+                if active_month != now_month:
+                    to_finalize = active_month
+                self._meta_set(conn, "active_month", now_month)
+                conn.commit()
+            finally:
+                conn.close()
 
-        # Finalize previous month outside lock
+        # Finalize previous month outside lock.
         if to_finalize:
             try:
                 self.emit_signed_monthly_summary(month=to_finalize)
@@ -469,20 +541,226 @@ class DataLogger:
         data = self._canonical_bytes(payload)
         return hmac.new(self._usage_signing_key.encode("utf-8"), data, hashlib.sha256).hexdigest()
 
+    def _db_connect(self) -> sqlite3.Connection:
+        os.makedirs(os.path.dirname(self.usage_db_path) or ".", exist_ok=True)
+        conn = sqlite3.connect(self.usage_db_path, timeout=5)
+        conn.row_factory = sqlite3.Row
+        return conn
+
+    def _init_usage_db(self) -> None:
+        conn = self._db_connect()
+        try:
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS usage_events (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    event_id TEXT NOT NULL UNIQUE,
+                    event_type TEXT NOT NULL,
+                    ts_utc TEXT NOT NULL,
+                    month TEXT NOT NULL,
+                    day TEXT NOT NULL,
+                    decision_state TEXT NOT NULL,
+                    mode TEXT NOT NULL DEFAULT '',
+                    reason_code TEXT NOT NULL DEFAULT '',
+                    llm_used INTEGER NOT NULL DEFAULT 0,
+                    cache_hit INTEGER NOT NULL DEFAULT 0,
+                    latency_ms INTEGER,
+                    heartbeat_counter INTEGER NOT NULL,
+                    heartbeat_sig TEXT NOT NULL
+                )
+                """
+            )
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_usage_events_month ON usage_events(month)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_usage_events_day ON usage_events(day)")
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_usage_events_day_decision ON usage_events(day, decision_state)"
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS usage_meta (
+                    key TEXT PRIMARY KEY,
+                    value TEXT NOT NULL
+                )
+                """
+            )
+            if self._meta_get(conn, "active_month", None) is None:
+                self._meta_set(conn, "active_month", self._current_month())
+            conn.commit()
+        finally:
+            conn.close()
+
+    def _meta_get(self, conn: sqlite3.Connection, key: str, default: Optional[str]) -> Optional[str]:
+        row = conn.execute("SELECT value FROM usage_meta WHERE key = ?", (key,)).fetchone()
+        if not row:
+            return default
+        return _safe_str(row["value"], default if default is not None else "")
+
+    def _meta_get_int(self, conn: sqlite3.Connection, key: str, default: int = 0) -> int:
+        raw = self._meta_get(conn, key, str(default))
+        try:
+            return int(raw if raw is not None else default)
+        except (TypeError, ValueError):
+            return int(default)
+
+    def _meta_set(self, conn: sqlite3.Connection, key: str, value: Any) -> None:
+        conn.execute(
+            """
+            INSERT INTO usage_meta(key, value) VALUES(?, ?)
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value
+            """,
+            (key, str(value)),
+        )
+
+    def _heartbeat_signature(self, total_events: int, counter: int, event_id: str, ts_utc: str) -> str:
+        payload = f"{total_events}|{counter}|{event_id}|{ts_utc}"
+        return hmac.new(
+            self._usage_signing_key.encode("utf-8"),
+            payload.encode("utf-8"),
+            hashlib.sha256,
+        ).hexdigest()
+
+    def _append_usage_event(
+        self,
+        event_id: str,
+        event_type: str,
+        decision_state: str,
+        mode: str,
+        reason_code: str,
+        llm_used: bool,
+        cache_hit: bool,
+        latency_ms: Optional[int],
+    ) -> None:
+        with self._usage_lock:
+            conn = self._db_connect()
+            try:
+                ts = _utc_iso()
+                month_key, day_key, _ = _utc_dates()
+                total_events = self._meta_get_int(conn, "total_events", 0) + 1
+                counter = self._meta_get_int(conn, "heartbeat_counter", 0) + 1
+                hb_sig = self._heartbeat_signature(total_events, counter, event_id, ts)
+
+                conn.execute(
+                    """
+                    INSERT INTO usage_events(
+                        event_id, event_type, ts_utc, month, day,
+                        decision_state, mode, reason_code, llm_used,
+                        cache_hit, latency_ms, heartbeat_counter, heartbeat_sig
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        event_id,
+                        _safe_str(event_type, "analysis"),
+                        ts,
+                        month_key,
+                        day_key,
+                        _safe_str(decision_state, "ERROR").upper(),
+                        _safe_str(mode, ""),
+                        _safe_str(reason_code, ""),
+                        1 if llm_used else 0,
+                        1 if cache_hit else 0,
+                        int(latency_ms) if latency_ms is not None else None,
+                        counter,
+                        hb_sig,
+                    ),
+                )
+
+                self._meta_set(conn, "total_events", total_events)
+                self._meta_set(conn, "heartbeat_counter", counter)
+                self._meta_set(conn, "last_event_id", event_id)
+                self._meta_set(conn, "last_event_ts", ts)
+                self._meta_set(conn, "last_heartbeat_sig", hb_sig)
+                conn.commit()
+            except Exception as exc:
+                conn.rollback()
+                print(f"[DataLogger] usage event write failed: {exc}")
+            finally:
+                conn.close()
+
+    def _month_counts(self, month_key: str) -> Dict[str, int]:
+        conn = self._db_connect()
+        try:
+            row = conn.execute(
+                """
+                SELECT
+                    SUM(CASE WHEN event_type IN ('analysis', 'error') THEN 1 ELSE 0 END) AS analysis_count,
+                    SUM(CASE WHEN event_type = 'feedback' THEN 1 ELSE 0 END) AS feedback_count,
+                    COUNT(*) AS total_events
+                FROM usage_events
+                WHERE month = ?
+                """,
+                (month_key,),
+            ).fetchone()
+            return {
+                "analysis_count": int(row["analysis_count"] or 0),
+                "feedback_count": int(row["feedback_count"] or 0),
+                "total_events": int(row["total_events"] or 0),
+            }
+        finally:
+            conn.close()
+
+    def _month_decision_counts(self, month_key: str) -> Dict[str, int]:
+        conn = self._db_connect()
+        try:
+            rows = conn.execute(
+                """
+                SELECT decision_state, COUNT(*) AS c
+                FROM usage_events
+                WHERE month = ?
+                  AND event_type IN ('analysis', 'error')
+                GROUP BY decision_state
+                """,
+                (month_key,),
+            ).fetchall()
+            out: Dict[str, int] = {}
+            for row in rows:
+                out[_safe_str(row["decision_state"], "UNKNOWN")] = int(row["c"] or 0)
+            return out
+        finally:
+            conn.close()
+
+    def _heartbeat_status(self) -> Dict[str, Any]:
+        conn = self._db_connect()
+        try:
+            total_events = self._meta_get_int(conn, "total_events", 0)
+            counter = self._meta_get_int(conn, "heartbeat_counter", 0)
+            event_id = self._meta_get(conn, "last_event_id", "") or ""
+            ts_utc = self._meta_get(conn, "last_event_ts", "") or ""
+            sig = self._meta_get(conn, "last_heartbeat_sig", "") or ""
+        finally:
+            conn.close()
+
+        if not event_id:
+            return {
+                "ok": True,
+                "reason": "no_events",
+                "total_events": total_events,
+                "heartbeat_counter": counter,
+            }
+
+        expected = self._heartbeat_signature(total_events, counter, event_id, ts_utc)
+        ok = bool(sig) and hmac.compare_digest(expected, sig)
+        return {
+            "ok": ok,
+            "reason": "ok" if ok else "signature_mismatch",
+            "total_events": total_events,
+            "heartbeat_counter": counter,
+            "last_event_id": event_id,
+            "last_event_ts": ts_utc,
+        }
+
     def emit_signed_monthly_summary(self, month: Optional[str] = None) -> Dict[str, Any]:
         month_key = (month or self._current_month()).strip()
-        with self._usage_lock:
-            counts = dict(self._usage_by_month.get(month_key, {"analysis_count": 0, "feedback_count": 0}))
+        counts = self._month_counts(month_key)
+        decisions = self._month_decision_counts(month_key)
+        heartbeat = self._heartbeat_status()
 
         payload = {
             "schema_version": "1.0",
             "month": month_key,
             "generated_at_utc": _utc_iso(),
-            "counts": {
-                "analysis_count": int(counts.get("analysis_count", 0)),
-                "feedback_count": int(counts.get("feedback_count", 0)),
-                "total_events": int(counts.get("analysis_count", 0)) + int(counts.get("feedback_count", 0)),
-            },
+            "counts": counts,
+            "decision_counts": decisions,
+            "heartbeat": heartbeat,
             "content_free": True,
             "signature_algorithm": "HMAC-SHA256",
         }
@@ -506,15 +784,17 @@ class DataLogger:
 
     def get_usage_snapshot(self) -> Dict[str, Any]:
         month_key = self._current_month()
-        with self._usage_lock:
-            counts = dict(self._usage_by_month.get(month_key, {"analysis_count": 0, "feedback_count": 0}))
+        counts = self._month_counts(month_key)
+        heartbeat = self._heartbeat_status()
         return {
             "month": month_key,
             "analysis_in_month": int(counts.get("analysis_count", 0)),
             "feedback_in_month": int(counts.get("feedback_count", 0)),
             "summary_dir": self.usage_dir,
+            "usage_db_path": self.usage_db_path,
             "signature_algorithm": "HMAC-SHA256",
             "signing_key_configured": bool(self._usage_signing_key),
+            "heartbeat": heartbeat,
         }
 
 

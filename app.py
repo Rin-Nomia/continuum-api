@@ -708,6 +708,11 @@ async def analyze(req: AnalyzeRequest):
     result = pipeline.process(req.text)
 
     if result.get("error"):
+        if data_logger and hasattr(data_logger, "log_error_event"):
+            try:
+                data_logger.log_error_event(_safe_str(result.get("reason"), "pipeline_error"))
+            except Exception as log_exc:
+                logger.warning(f"error_event_log_failed:{log_exc}")
         raise HTTPException(400, result.get("reason", "pipeline_error"))
 
     # -------------------- Core truth --------------------

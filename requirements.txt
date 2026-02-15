@@ -12,3 +12,4 @@ ratelimit==2.2.1
 gitpython
 
 requests>=2.31.0
+streamlit

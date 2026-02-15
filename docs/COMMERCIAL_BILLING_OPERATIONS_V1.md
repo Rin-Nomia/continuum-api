@@ -132,7 +132,31 @@ Finance handoff SOP:
 
 ---
 
-## 6. Operational notes
+## 6. C3 Command Center (visual admin console)
+
+Launch C3 on localhost:
+
+```bash
+python3 manage.py dashboard
+```
+
+Default bind:
+- host: `127.0.0.1`
+- port: `8501`
+
+C3 capabilities:
+- license identity and TTL board
+- quota/traffic dashboard (`usage.db`)
+- one-click audit signature generation
+- license file update (`.key`/`.enc`)
+- scrubbed log export (EVIDENCE_SCHEMA_V1-aligned)
+
+Reference:
+- `docs/C3_COMMAND_CENTER_V1.md`
+
+---
+
+## 7. Operational notes
 
 - In `degrade` mode, invalid license blocks analyze calls with license error.
 - In `stop` mode, invalid license halts service processing.
