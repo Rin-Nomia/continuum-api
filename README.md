@@ -9,6 +9,14 @@ app_file: app.py
 pinned: false
 ---
 
+## Business & Licensing
+
+- Commercial Pitch Deck Summary: [docs/COMMERCIAL_PITCH_V1.md](docs/COMMERCIAL_PITCH_V1.md)
+- Stability Acceptance (1200 decisions, 100% consistency): [docs/STABILITY_ACCEPTANCE_REPORT_V1.md](docs/STABILITY_ACCEPTANCE_REPORT_V1.md)
+- Technical Whitepaper Summary: [docs/TECHNICAL_WHITEPAPER_SUMMARY_V1.md](docs/TECHNICAL_WHITEPAPER_SUMMARY_V1.md)
+
+---
+
 # Continuum API — RIN Protocol
 
 **Tone Misalignment Firewall**  
