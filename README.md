@@ -207,6 +207,8 @@ These will only be introduced behind explicit feature gates.
 	•	Product Constitution v1.0: docs/PRODUCT_CONSTITUTION_v1_0.md
 	•	Product Constitution (External) v1.0: docs/PRODUCT_CONSTITUTION_EXTERNAL_v1_0.md
 	•	Evidence Schema v1.0: docs/EVIDENCE_SCHEMA_V1.md
+	•	Stability Acceptance Report v1: docs/STABILITY_ACCEPTANCE_REPORT_V1.md
+	•	Technical Whitepaper Summary v1: docs/TECHNICAL_WHITEPAPER_SUMMARY_V1.md
 
 ⸻
 
