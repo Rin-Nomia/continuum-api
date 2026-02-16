@@ -12,18 +12,33 @@ Design goals:
 ## Security Model
 
 - **Independent port**: default `127.0.0.1:8501`
-- **Admin authentication**: requires `C3_ADMIN_PASSWORD`
+- **Admin authentication**:
+  - `C3_ADMIN_PASSWORD_HASH` (recommended, PBKDF2 hash)
+  - or `C3_ADMIN_PASSWORD` (must satisfy strong password policy)
+- **Brute-force protection**:
+  - failed login lockout (`C3_LOGIN_MAX_ATTEMPTS`, `C3_LOCKOUT_SECONDS`)
+  - session timeout (`C3_SESSION_TTL_SECONDS`)
 - **Read-only telemetry path**: dashboard reads metrics from `usage.db` (SQLite)
 - **Heartbeat anti-tamper**: usage events include HMAC heartbeat fields; dashboard verifies integrity
 
 ## Required Environment Variables
 
 - `LOG_SALT` (required, also used as fallback signing key)
-- `C3_ADMIN_PASSWORD` (required for login)
+- `C3_ADMIN_PASSWORD_HASH` (recommended)
+- `C3_ADMIN_PASSWORD` (fallback; strong policy required)
 - `LICENSE_KEY` (required for decrypting `.key` / `.enc`)
 - `LICENSE_FILE` (optional, default `license/license.enc`)
 - `USAGE_DB_PATH` (optional, default `logs/usage.db`)
 - `USAGE_SIGNING_KEY` (optional, default to `LOG_SALT`)
+- `C3_LOGIN_MAX_ATTEMPTS` (optional, default `5`)
+- `C3_LOCKOUT_SECONDS` (optional, default `900`)
+- `C3_SESSION_TTL_SECONDS` (optional, default `1800`)
+
+Hash generator:
+
+```bash
+python3 generate_c3_password_hash.py
+```
 
 ## Launch
 
@@ -58,14 +73,14 @@ streamlit run c3_dashboard.py --server.address 127.0.0.1 --server.port 8501
   └─ Days remaining (<=30 days turns warning color)
 
 [Mode Status]
-  ├─ LOG_SALT mounted (OK/MISSING)
-  ├─ Decision Health (24h status)
-  └─ Heartbeat Guard (OK/ALERT)
+  ├─ SALT guard
+  ├─ HEALTH guard
+  └─ HEARTBEAT guard
 
 [Traffic Quota Dashboard]
   ├─ Progress bar: current usage / quota
-  ├─ 30-day ratio chart: ALLOW / GUIDE / ERROR
-  └─ 30-day volume chart
+  ├─ 85% threshold warning for renewal action
+  └─ 30-day trend chart: ALLOW / GUIDE / ERROR
 
 [Cost Estimator]
   ├─ Base monthly cost
@@ -74,9 +89,9 @@ streamlit run c3_dashboard.py --server.address 127.0.0.1 --server.port 8501
   └─ Projected total
 
 [Action Module]
-  ├─ Generate Audit File        -> logs/usage/EVIDENCE_SUMMARY.sig
-  ├─ Update License (.key/.enc) -> replace LICENSE_FILE after decrypt validation
-  └─ Scrub Log Export           -> logs/exports/scrub_log_export_<timestamp>.json
+  ├─ 產出對帳加密檔      -> logs/usage/EVIDENCE_SUMMARY.sig
+  ├─ 匯出合規報告        -> logs/exports/scrub_log_export_<timestamp>.json
+  └─ 更新授權密鑰(.key/.enc) -> replace LICENSE_FILE after decrypt validation
 ```
 
 ## Action Module Output Notes
@@ -92,4 +107,8 @@ streamlit run c3_dashboard.py --server.address 127.0.0.1 --server.port 8501
 ### 3) Scrub Log Export
 - Exports content-free records aligned to `EVIDENCE_SCHEMA_V1` key contract
 - No raw text persistence
+
+## UI Preview
+
+- Preview image: `assets/dashboard_preview.png`
 

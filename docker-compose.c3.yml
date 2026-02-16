@@ -1,0 +1,72 @@
+services:
+  continuum-api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+      args:
+        Z1_MVP_REF: ${Z1_MVP_REF:-main}
+    image: continuum-api:latest
+    restart: unless-stopped
+    environment:
+      LOG_SALT: ${LOG_SALT:?LOG_SALT is required}
+      USAGE_SIGNING_KEY: ${USAGE_SIGNING_KEY:-}
+      LICENSE_KEY: ${LICENSE_KEY:?LICENSE_KEY is required}
+      LICENSE_FILE: /data/license/license.enc
+      USAGE_DB_PATH: /data/logs/usage.db
+      LICENSE_ENFORCEMENT_MODE: ${LICENSE_ENFORCEMENT_MODE:-degrade}
+      API_PORT: 8000
+    volumes:
+      - continuum_data:/data
+    ports:
+      - "7860:8000"
+
+  continuum-c3:
+    build:
+      context: .
+      dockerfile: Dockerfile.c3
+      args:
+        Z1_MVP_REF: ${Z1_MVP_REF:-main}
+    image: continuum-c3:latest
+    restart: unless-stopped
+    environment:
+      LOG_SALT: ${LOG_SALT:?LOG_SALT is required}
+      USAGE_SIGNING_KEY: ${USAGE_SIGNING_KEY:-}
+      LICENSE_KEY: ${LICENSE_KEY:?LICENSE_KEY is required}
+      LICENSE_FILE: /data/license/license.enc
+      USAGE_DB_PATH: /data/logs/usage.db
+      C3_ADMIN_PASSWORD_HASH: ${C3_ADMIN_PASSWORD_HASH:-}
+      C3_ADMIN_PASSWORD: ${C3_ADMIN_PASSWORD:-}
+      C3_LOGIN_MAX_ATTEMPTS: ${C3_LOGIN_MAX_ATTEMPTS:-5}
+      C3_LOCKOUT_SECONDS: ${C3_LOCKOUT_SECONDS:-900}
+      C3_SESSION_TTL_SECONDS: ${C3_SESSION_TTL_SECONDS:-1800}
+      C3_PORT: 8501
+      C3_BIND_HOST: 0.0.0.0
+    volumes:
+      - continuum_data:/data
+    expose:
+      - "8501"
+
+  c3-gateway:
+    image: caddy:2.9.1-alpine
+    restart: unless-stopped
+    depends_on:
+      - continuum-c3
+      - continuum-api
+    environment:
+      ACME_EMAIL: ${ACME_EMAIL:-}
+      API_HOSTNAME: ${API_HOSTNAME:-}
+      C3_HOSTNAME: ${C3_HOSTNAME:-}
+      C3_BASIC_AUTH_USER: ${C3_BASIC_AUTH_USER:-admin}
+      C3_BASIC_AUTH_HASH: ${C3_BASIC_AUTH_HASH:?C3_BASIC_AUTH_HASH is required}
+    volumes:
+      - ./deploy/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    ports:
+      - "80:80"
+      - "443:443"
+
+volumes:
+  continuum_data:
+  caddy_data:
+  caddy_config:

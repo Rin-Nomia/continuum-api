@@ -12,8 +12,10 @@ import hashlib
 import hmac
 import json
 import os
+import re
 import sqlite3
 import sys
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
@@ -64,6 +66,31 @@ def _admin_password() -> str:
     return os.environ.get("C3_ADMIN_PASSWORD", "").strip()
 
 
+def _admin_password_hash() -> str:
+    return os.environ.get("C3_ADMIN_PASSWORD_HASH", "").strip()
+
+
+def _int_env(name: str, default: int) -> int:
+    try:
+        return int(os.environ.get(name, str(default)).strip())
+    except (TypeError, ValueError):
+        return int(default)
+
+
+def _password_policy_ok(secret: str) -> Tuple[bool, str]:
+    if len(secret) < 12:
+        return False, "password_too_short"
+    if not re.search(r"[A-Z]", secret):
+        return False, "missing_uppercase"
+    if not re.search(r"[a-z]", secret):
+        return False, "missing_lowercase"
+    if not re.search(r"[0-9]", secret):
+        return False, "missing_digit"
+    if not re.search(r"[^A-Za-z0-9]", secret):
+        return False, "missing_symbol"
+    return True, "ok"
+
+
 def _kdf_key(secret: str) -> bytes:
     return hashlib.sha256((secret or "").encode("utf-8")).digest()
 
@@ -110,6 +137,35 @@ def _decrypt_payload(envelope: Dict[str, Any], secret: str) -> Dict[str, Any]:
         raise RuntimeError("signature_mismatch")
     plain = _xor_stream(ciphertext, secret, nonce)
     return json.loads(plain.decode("utf-8"))
+
+
+def _pbkdf2_digest(secret: str, salt_raw: bytes, iterations: int) -> str:
+    return hashlib.pbkdf2_hmac(
+        "sha256",
+        secret.encode("utf-8"),
+        salt_raw,
+        iterations,
+    ).hex()
+
+
+def _verify_admin_secret(candidate: str) -> bool:
+    pwd_hash = _admin_password_hash()
+    if pwd_hash:
+        # Format: pbkdf2_sha256$260000$<salt_b64>$<digest_hex>
+        parts = pwd_hash.split("$")
+        if len(parts) != 4 or parts[0] != "pbkdf2_sha256":
+            return False
+        try:
+            iterations = int(parts[1])
+            salt_raw = base64.b64decode(parts[2].encode("utf-8"))
+        except Exception:
+            return False
+        expected = parts[3].strip().lower()
+        actual = _pbkdf2_digest(candidate, salt_raw, iterations)
+        return hmac.compare_digest(actual, expected)
+
+    plain = _admin_password()
+    return bool(plain) and hmac.compare_digest(candidate, plain)
 
 
 def _connect_usage_db_readonly(path: Path) -> sqlite3.Connection:
@@ -428,27 +484,76 @@ def _render_login() -> None:
     st.title("Continuum Command Center (C3)")
     st.caption("Commercial operations dashboard (localhost only)")
     admin_pwd = _admin_password()
-    if not admin_pwd:
-        st.error("C3_ADMIN_PASSWORD is not configured. Refusing to continue.")
+    admin_hash = _admin_password_hash()
+    if not admin_pwd and not admin_hash:
+        st.error("C3_ADMIN_PASSWORD or C3_ADMIN_PASSWORD_HASH is required.")
         st.stop()
+
+    if admin_pwd and not admin_hash:
+        strong, reason = _password_policy_ok(admin_pwd)
+        if not strong:
+            st.error(
+                f"Weak C3_ADMIN_PASSWORD ({reason}). "
+                "Use >=12 chars with upper/lower/digit/symbol or set C3_ADMIN_PASSWORD_HASH."
+            )
+            st.stop()
+
+    max_attempts = max(1, _int_env("C3_LOGIN_MAX_ATTEMPTS", 5))
+    lockout_seconds = max(30, _int_env("C3_LOCKOUT_SECONDS", 900))
+    session_ttl_seconds = max(300, _int_env("C3_SESSION_TTL_SECONDS", 1800))
+    now = time.time()
+
+    authed_at = float(st.session_state.get("c3_authed_at", 0.0))
+    if st.session_state.get("c3_authed") and authed_at > 0 and now - authed_at > session_ttl_seconds:
+        st.session_state["c3_authed"] = False
+        st.session_state["c3_authed_at"] = 0.0
+        st.warning("Session expired. Please re-authenticate.")
 
     if st.session_state.get("c3_authed"):
         return
+
+    locked_until = float(st.session_state.get("c3_locked_until", 0.0))
+    if now < locked_until:
+        remain = int(locked_until - now)
+        st.error(f"Too many failed attempts. Retry in {remain}s.")
+        st.stop()
 
     with st.form("c3_login_form"):
         pwd = st.text_input("Admin Password", type="password")
         submit = st.form_submit_button("Login")
         if submit:
-            if hmac.compare_digest(pwd, admin_pwd):
+            if _verify_admin_secret(pwd):
                 st.session_state["c3_authed"] = True
+                st.session_state["c3_authed_at"] = now
+                st.session_state["c3_failed_attempts"] = 0
+                st.session_state["c3_locked_until"] = 0.0
                 st.success("Authenticated.")
                 st.rerun()
             else:
+                failed = int(st.session_state.get("c3_failed_attempts", 0)) + 1
+                st.session_state["c3_failed_attempts"] = failed
+                if failed >= max_attempts:
+                    st.session_state["c3_failed_attempts"] = 0
+                    st.session_state["c3_locked_until"] = now + lockout_seconds
+                    st.error(f"Account temporarily locked for {lockout_seconds}s.")
+                    st.stop()
                 st.error("Invalid password.")
     st.stop()
 
 
-def _render_header(license_payload: Dict[str, Any], license_status: str, usage_db_path: Path) -> None:
+def _guard_lamp(ok: bool, name: str) -> str:
+    return f"{name} {'✅' if ok else '⚠️'}"
+
+
+def _render_header(
+    license_payload: Dict[str, Any],
+    license_status: str,
+    usage_db_path: Path,
+    *,
+    log_salt_loaded: bool,
+    decision_health: Dict[str, Any],
+    heartbeat: Dict[str, Any],
+) -> None:
     customer_name = str(license_payload.get("customer_name", "Unknown Customer"))
     uid = str(license_payload.get("uid", license_payload.get("license_id", "N/A")))
     tier = _license_tier(license_payload)
@@ -461,19 +566,35 @@ def _render_header(license_payload: Dict[str, Any], license_status: str, usage_d
     elif ttl_days <= 30:
         ttl_color = "orange"
 
-    st.subheader("License Identity")
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Customer", customer_name)
-    col2.metric("UID", uid)
-    col3.metric("Tier", tier)
+    st.markdown("## 1) 身份與安全區")
+    top_a, top_b, top_c = st.columns([2, 2, 3])
+    top_a.metric("Customer", customer_name)
+    top_a.caption(f"UID: `{uid}`")
+    top_a.caption(f"Tier: **{tier}**")
 
-    st.subheader("TTL Countdown")
-    ttl_text = f"{ttl_days} days" if ttl_days >= 0 else "invalid_expiry"
-    st.markdown(
-        f"**TTL:** :{ttl_color}[{ttl_text}] &nbsp;&nbsp; | &nbsp;&nbsp; "
-        f"**License status:** `{license_status}` &nbsp;&nbsp; | &nbsp;&nbsp; "
-        f"**usage.db:** `{usage_db_path}`"
+    ttl_text = f"{ttl_days} Days Left" if ttl_days >= 0 else "invalid_expiry"
+    top_b.markdown(f"**TTL 狀態：** :{ttl_color}[{ttl_text}]")
+    top_b.caption(f"License status: `{license_status}`")
+
+    health_ok = decision_health.get("status") in {"HEALTHY", "NO_TRAFFIC"}
+    lamps = " / ".join(
+        [
+            _guard_lamp(log_salt_loaded, "SALT"),
+            _guard_lamp(health_ok, "HEALTH"),
+            _guard_lamp(bool(heartbeat.get("ok")), "HEARTBEAT"),
+        ]
     )
+    top_c.markdown("**Security Guards**")
+    all_ok = log_salt_loaded and health_ok and bool(heartbeat.get("ok"))
+    if all_ok:
+        top_c.success(lamps)
+    else:
+        top_c.warning(lamps)
+    top_c.caption(
+        f"error_rate_24h={decision_health['error_rate_24h']:.2%} | "
+        f"counter={heartbeat.get('heartbeat_counter', 0)}"
+    )
+    st.caption(f"usage.db: `{usage_db_path}`")
 
 
 def main() -> None:
@@ -488,7 +609,6 @@ def main() -> None:
     log_salt_loaded = bool(os.environ.get("LOG_SALT", "").strip())
 
     license_payload, license_status = _load_license_payload(license_file, license_key)
-    _render_header(license_payload, license_status, usage_db_path)
 
     if not usage_db_path.exists():
         st.error(f"usage.db not found at {usage_db_path}")
@@ -502,31 +622,40 @@ def main() -> None:
         meta = _fetch_usage_meta(conn)
         heartbeat = _verify_heartbeat(meta, signing_key)
 
+    _render_header(
+        license_payload,
+        license_status,
+        usage_db_path,
+        log_salt_loaded=log_salt_loaded,
+        decision_health=decision_health,
+        heartbeat=heartbeat,
+    )
+
     quota_limit = _safe_int(license_payload.get("quota_limit"), 0)
     usage_count = counts["analysis_count"]
     progress = 0.0 if quota_limit <= 0 else min(1.0, usage_count / quota_limit)
     tier = _license_tier(license_payload)
     cost = _build_cost_estimate(tier=tier, usage_count=usage_count, quota_limit=quota_limit)
 
-    st.subheader("Mode Status")
-    m1, m2, m3 = st.columns(3)
-    m1.metric("LOG_SALT", "OK" if log_salt_loaded else "MISSING")
-    m2.metric("Decision Health (24h)", decision_health["status"])
-    m3.metric("Heartbeat Guard", "OK" if heartbeat.get("ok") else f"ALERT:{heartbeat.get('reason')}")
-    st.caption(
-        f"24h error rate: {decision_health['error_rate_24h']:.2%} | "
-        f"total events: {heartbeat.get('total_events', 0)} | "
-        f"heartbeat counter: {heartbeat.get('heartbeat_counter', 0)}"
-    )
+    st.markdown("## 2) 流量與收錢區")
+    left, right = st.columns([2, 1])
+    left.metric("當前消耗 / 授權總配額", f"{usage_count:,} / {quota_limit:,}" if quota_limit > 0 else f"{usage_count:,} / N/A")
+    left.progress(progress)
+    left.caption(f"0  ← 進度條 →  {quota_limit:,}" if quota_limit > 0 else "Quota not configured")
 
-    st.subheader("Traffic Quota Dashboard")
-    q1, q2 = st.columns([2, 1])
-    q1.metric("Current Usage / Quota", f"{usage_count} / {quota_limit if quota_limit else 'N/A'}")
-    q1.progress(progress)
-    q2.metric("Buffer Consumption", f"{progress * 100:.1f}%" if quota_limit > 0 else "N/A")
+    if quota_limit > 0 and progress >= 0.85:
+        left.warning("配額已超過 85%，進入收費提醒區間。")
+    elif quota_limit > 0:
+        left.success("配額尚在安全緩衝區。")
+    else:
+        left.info("未偵測到 quota_limit，無法計算配額緩衝。")
+
+    right.metric("緩衝區消耗", f"{progress * 100:.1f}%" if quota_limit > 0 else "N/A")
+    right.metric("Decision Health (24h)", decision_health["status"])
+    right.metric("Heartbeat Guard", "OK" if heartbeat.get("ok") else f"ALERT:{heartbeat.get('reason')}")
 
     if trend_df.empty:
-        st.info("No traffic in the past 30 days.")
+        st.info("過去 30 天尚無流量資料。")
     else:
         pivot = (
             trend_df.pivot_table(index="day", columns="decision_bucket", values="count", aggfunc="sum", fill_value=0)
@@ -536,26 +665,22 @@ def main() -> None:
             if col not in pivot.columns:
                 pivot[col] = 0
         pivot = pivot[["ALLOW", "GUIDE", "ERROR"]]
-        ratio = pivot.div(pivot.sum(axis=1), axis=0).fillna(0.0)
+        st.markdown("**30 天流量趨勢（ALLOW / GUIDE / ERROR）**")
+        st.line_chart(pivot)
 
-        st.markdown("**30-day request distribution (ALLOW / GUIDE / ERROR)**")
-        st.area_chart(ratio)
-        st.markdown("**30-day request volume**")
-        st.bar_chart(pivot)
-
-    st.subheader("Cost Estimator")
+    st.markdown("**成本估算器（階梯定價）**")
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Base (USD/mo)", f"{cost['base_monthly_usd']:.2f}")
-    c2.metric("Overage Count", str(cost["overage_count"]))
-    c3.metric("Overage Fee (USD)", f"{cost['overage_fee_usd']:.2f}")
-    c4.metric("Projected Total (USD)", f"{cost['projected_total_usd']:.2f}")
+    c1.metric("Base (USD/月)", f"{cost['base_monthly_usd']:.2f}")
+    c2.metric("超額次數", str(cost["overage_count"]))
+    c3.metric("超額費用 (USD)", f"{cost['overage_fee_usd']:.2f}")
+    c4.metric("預估總成本 (USD)", f"{cost['projected_total_usd']:.2f}")
 
     st.divider()
-    st.subheader("Action Module")
+    st.markdown("## 3) 指揮動作區")
     a1, a2, a3 = st.columns(3)
 
     with a1:
-        if st.button("Generate Audit File", use_container_width=True):
+        if st.button("產出對帳加密檔", use_container_width=True):
             try:
                 target, payload = _generate_evidence_summary_sig(
                     db_path=usage_db_path,
@@ -563,40 +688,41 @@ def main() -> None:
                     signing_key=signing_key,
                     license_payload=license_payload,
                 )
-                st.success(f"Audit file generated: {target}")
+                st.success(f"已產出：{target}")
                 st.code(json.dumps(payload, ensure_ascii=False, indent=2), language="json")
             except Exception as exc:
-                st.error(f"Generate audit failed: {exc}")
+                st.error(f"產出失敗：{exc}")
 
     with a2:
-        upload = st.file_uploader("Update License (.key/.enc)", type=["key", "enc", "json"])
-        if st.button("Update License", use_container_width=True):
-            if upload is None:
-                st.warning("Please upload a license file first.")
-            else:
-                try:
-                    payload = _update_license_file(upload.read(), license_file=license_file, license_key=license_key)
-                    st.success("License updated successfully.")
-                    st.code(json.dumps(payload, ensure_ascii=False, indent=2), language="json")
-                except Exception as exc:
-                    st.error(f"Update license failed: {exc}")
-
-    with a3:
-        if st.button("Scrub Log Export", use_container_width=True):
+        if st.button("匯出合規報告", use_container_width=True):
             try:
                 target, payload = _export_scrub_log(
                     db_path=usage_db_path,
                     output_dir=APP_DIR / "logs" / "exports",
                     api_version=api_version,
                 )
-                st.success(f"Scrub export generated: {target}")
+                st.success(f"已匯出：{target}")
                 st.caption(f"Record count: {payload['record_count']}")
             except Exception as exc:
-                st.error(f"Scrub export failed: {exc}")
+                st.error(f"匯出失敗：{exc}")
+
+    with a3:
+        upload = st.file_uploader("上傳授權檔 (.key/.enc)", type=["key", "enc", "json"])
+        if st.button("更新授權密鑰", use_container_width=True):
+            if upload is None:
+                st.warning("請先上傳授權檔。")
+            else:
+                try:
+                    payload = _update_license_file(upload.read(), license_file=license_file, license_key=license_key)
+                    st.success("授權更新成功。")
+                    st.code(json.dumps(payload, ensure_ascii=False, indent=2), language="json")
+                except Exception as exc:
+                    st.error(f"更新失敗：{exc}")
 
     st.divider()
     if st.button("Logout"):
         st.session_state["c3_authed"] = False
+        st.session_state["c3_authed_at"] = 0.0
         st.rerun()
 
 

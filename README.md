@@ -18,6 +18,8 @@ pinned: false
 - Finance Reconciliation SOP: [docs/FINANCE_RECONCILIATION_SOP_V1.md](docs/FINANCE_RECONCILIATION_SOP_V1.md)
 - License Template: [license/sample_license_template.json](license/sample_license_template.json)
 - C3 Command Center (Admin Console): [docs/C3_COMMAND_CENTER_V1.md](docs/C3_COMMAND_CENTER_V1.md)
+- C3 Cloud Deployment (Render + HTTPS): [docs/CLOUD_DEPLOYMENT_RENDER_V1.md](docs/CLOUD_DEPLOYMENT_RENDER_V1.md)
+- C3 Dashboard Preview: [assets/dashboard_preview.png](assets/dashboard_preview.png)
 
 ---
 

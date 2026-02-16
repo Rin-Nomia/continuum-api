@@ -153,6 +153,12 @@ C3 capabilities:
 
 Reference:
 - `docs/C3_COMMAND_CENTER_V1.md`
+- `docs/CLOUD_DEPLOYMENT_RENDER_V1.md`
+
+Container artifacts:
+- `Dockerfile.api`
+- `Dockerfile.c3`
+- `docker-compose.c3.yml`
 
 ---
 
