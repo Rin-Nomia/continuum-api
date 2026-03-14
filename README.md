@@ -21,6 +21,7 @@ pinned: false
 - C3 Cloud Deployment (Oracle Always Free): [docs/CLOUD_DEPLOYMENT_ORACLE_FREE_V1.md](docs/CLOUD_DEPLOYMENT_ORACLE_FREE_V1.md)
 - C3 Cloud Deployment (Render + HTTPS): [docs/CLOUD_DEPLOYMENT_RENDER_V1.md](docs/CLOUD_DEPLOYMENT_RENDER_V1.md)
 - C3 Dashboard Preview: [assets/dashboard_preview.png](assets/dashboard_preview.png)
+- 5 分鐘客戶接入指南: [QUICKSTART.md](QUICKSTART.md)
 
 [Oracle cloud-init template](deploy/oracle/cloud-init.yaml)
 

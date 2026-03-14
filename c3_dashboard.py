@@ -13,6 +13,7 @@ import hmac
 import json
 import os
 import re
+import requests
 import sqlite3
 import sys
 import time
@@ -56,6 +57,69 @@ def _default_usage_db_path() -> Path:
 
 def _default_license_file() -> Path:
     return Path(os.environ.get("LICENSE_FILE", str(APP_DIR / "license" / "license.enc")))
+
+
+def _default_controls_file() -> Path:
+    explicit = os.environ.get("RUNTIME_CONTROLS_FILE", "").strip()
+    if explicit:
+        return Path(explicit)
+    if Path("/data").exists():
+        return Path("/data/runtime_controls.json")
+    return APP_DIR / "runtime_controls.json"
+
+
+_DEFAULT_RUNTIME_CONTROLS: Dict[str, Any] = {
+    "llm_enabled": True,
+    "llm_confidence_threshold": 0.60,
+    "repair_mode": "standard",
+    "boost_multipliers": {
+        "Anxious": {"ge1": 2.25, "ge2": 2.5, "ge3": 3.0},
+        "Cold": {"ge1": 2.25, "ge2": 2.5, "ge3": 3.0},
+        "Sharp": {"ge1": 2.25, "ge2": 2.5, "ge3": 3.0},
+        "Blur": {"ge1": 1.0, "ge2": 1.0, "ge3": 1.0},
+        "Pushy": {"ge1": 1.0, "ge2": 1.0, "ge3": 1.0},
+    },
+}
+
+
+def _load_runtime_controls(path: Path) -> Dict[str, Any]:
+    controls = json.loads(json.dumps(_DEFAULT_RUNTIME_CONTROLS))
+    if not path.exists():
+        return controls
+    try:
+        loaded = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return controls
+    if not isinstance(loaded, dict):
+        return controls
+
+    controls["llm_enabled"] = bool(loaded.get("llm_enabled", controls["llm_enabled"]))
+    try:
+        th = float(loaded.get("llm_confidence_threshold", controls["llm_confidence_threshold"]))
+    except (TypeError, ValueError):
+        th = controls["llm_confidence_threshold"]
+    controls["llm_confidence_threshold"] = max(0.0, min(1.0, th))
+
+    mode = str(loaded.get("repair_mode", controls["repair_mode"])).strip().lower()
+    controls["repair_mode"] = mode if mode in {"light", "standard", "formal"} else "standard"
+
+    boost = loaded.get("boost_multipliers")
+    if isinstance(boost, dict):
+        for tone, vals in controls["boost_multipliers"].items():
+            tone_loaded = boost.get(tone)
+            if not isinstance(tone_loaded, dict):
+                continue
+            for key, default_val in vals.items():
+                try:
+                    vals[key] = max(0.1, float(tone_loaded.get(key, default_val)))
+                except (TypeError, ValueError):
+                    vals[key] = default_val
+    return controls
+
+
+def _save_runtime_controls(path: Path, payload: Dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def _signing_key() -> str:
@@ -480,6 +544,115 @@ def _update_license_file(uploaded_bytes: bytes, license_file: Path, license_key:
     return payload
 
 
+def _render_system_controls(controls_file: Path) -> None:
+    st.markdown("## 系統參數")
+    st.caption("可直接調整治理參數，儲存後由 API 讀取 `runtime_controls.json` 生效。")
+    st.caption(f"控制檔路徑：`{controls_file}`")
+
+    controls = _load_runtime_controls(controls_file)
+    llm_enabled = st.checkbox("LLM 開關", value=bool(controls.get("llm_enabled", True)))
+    llm_threshold = st.slider(
+        "LLM 信心值門檻",
+        min_value=0.0,
+        max_value=1.0,
+        value=float(controls.get("llm_confidence_threshold", 0.60)),
+        step=0.01,
+    )
+    repair_mode = st.selectbox(
+        "預設修復模式",
+        options=["light", "standard", "formal"],
+        index=["light", "standard", "formal"].index(str(controls.get("repair_mode", "standard"))),
+    )
+
+    st.markdown("### 語氣 Boost 倍數")
+    updated_boost: Dict[str, Dict[str, float]] = {}
+    for tone in ["Anxious", "Cold", "Sharp", "Blur", "Pushy"]:
+        vals = controls.get("boost_multipliers", {}).get(tone, {})
+        c1, c2, c3 = st.columns(3)
+        ge1 = c1.number_input(f"{tone} × ge1", min_value=0.1, value=float(vals.get("ge1", 1.0)), step=0.05)
+        ge2 = c2.number_input(f"{tone} × ge2", min_value=0.1, value=float(vals.get("ge2", 1.0)), step=0.05)
+        ge3 = c3.number_input(f"{tone} × ge3", min_value=0.1, value=float(vals.get("ge3", 1.0)), step=0.05)
+        updated_boost[tone] = {"ge1": float(ge1), "ge2": float(ge2), "ge3": float(ge3)}
+
+    payload = {
+        "llm_enabled": bool(llm_enabled),
+        "llm_confidence_threshold": float(llm_threshold),
+        "repair_mode": str(repair_mode),
+        "boost_multipliers": updated_boost,
+        "updated_at_utc": _utc_now(),
+    }
+    if st.button("儲存系統參數", use_container_width=True):
+        try:
+            _save_runtime_controls(controls_file, payload)
+            st.success("系統參數已儲存。")
+        except Exception as exc:
+            st.error(f"儲存失敗：{exc}")
+
+    st.markdown("### 目前參數快照")
+    st.code(json.dumps(payload, ensure_ascii=False, indent=2), language="json")
+
+
+def _demo_api_urls() -> List[str]:
+    out: List[str] = []
+    env_url = os.environ.get("C3_DEMO_API_URL", "").strip()
+    if env_url:
+        out.append(env_url)
+    out.append("http://127.0.0.1:8000/api/v1/analyze")
+    out.append("http://continuum-api:8000/api/v1/analyze")
+    return out
+
+
+def _call_demo_analyze(text: str) -> Tuple[bool, Dict[str, Any], str, str]:
+    for url in _demo_api_urls():
+        try:
+            resp = requests.post(url, json={"text": text}, timeout=20)
+            if resp.status_code == 200:
+                data = resp.json() if resp.headers.get("content-type", "").startswith("application/json") else {}
+                return True, data if isinstance(data, dict) else {}, url, ""
+            return False, {}, url, f"status={resp.status_code} body={resp.text[:300]}"
+        except Exception as exc:
+            last_err = str(exc)
+            continue
+    return False, {}, "", last_err if 'last_err' in locals() else "unknown_error"
+
+
+def _render_demo_playground() -> None:
+    st.markdown("## Demo Playground")
+    st.caption("輸入單句，立即查看治理結果（原文/判定/修復對比）。")
+    text = st.text_area("輸入文字", height=120, placeholder="例如：你可以快一點嗎？")
+    if st.button("執行 Demo 分析", use_container_width=True):
+        if not text.strip():
+            st.warning("請先輸入文字。")
+            return
+        ok, data, url, err = _call_demo_analyze(text.strip())
+        if not ok:
+            st.error(f"呼叫失敗：{err}")
+            st.caption(f"候選 API：{', '.join(_demo_api_urls())}")
+            return
+
+        decision = str(data.get("decision_state", "N/A"))
+        freq_type = str(data.get("freq_type", "Unknown"))
+        conf = data.get("confidence_final", 0.0)
+        try:
+            conf_val = float(conf)
+        except (TypeError, ValueError):
+            conf_val = 0.0
+        repaired = data.get("repaired_text")
+        repaired_text = "" if repaired is None else str(repaired)
+
+        m1, m2, m3 = st.columns(3)
+        m1.metric("決策結果", decision)
+        m2.metric("語氣類型", freq_type)
+        m3.metric("信心值", f"{conf_val:.2f}")
+        st.caption(f"API 來源：`{url}`")
+
+        col_a, col_b = st.columns(2)
+        col_a.markdown("**原始文字**")
+        col_a.text_area("original_text", value=text, height=140, disabled=True, label_visibility="collapsed")
+        col_b.markdown("**修復後文字**")
+        col_b.text_area("repaired_text", value=repaired_text, height=140, disabled=True, label_visibility="collapsed")
+
+
 def _render_login() -> None:
     st.title("Continuum Command Center (C3)")
     st.caption("Commercial operations dashboard (localhost only)")
@@ -603,10 +776,12 @@ def main() -> None:
 
     usage_db_path = _default_usage_db_path()
     license_file = _default_license_file()
+    controls_file = _default_controls_file()
     license_key = os.environ.get("LICENSE_KEY", "").strip()
     signing_key = _signing_key()
     api_version = os.environ.get("API_VERSION", "1.1")
     log_salt_loaded = bool(os.environ.get("LOG_SALT", "").strip())
+    page = st.sidebar.radio("頁面", ["總覽", "系統參數", "Demo Playground"], index=0)
 
     license_payload, license_status = _load_license_payload(license_file, license_key)
 
@@ -630,6 +805,14 @@ def main() -> None:
         decision_health=decision_health,
         heartbeat=heartbeat,
     )
+
+    if page == "系統參數":
+        _render_system_controls(controls_file=controls_file)
+        return
+
+    if page == "Demo Playground":
+        _render_demo_playground()
+        return
 
     quota_limit = _safe_int(license_payload.get("quota_limit"), 0)
     usage_count = counts["analysis_count"]
