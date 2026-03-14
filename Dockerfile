@@ -29,6 +29,7 @@ COPY app.py /app/app.py
 COPY logger.py /app/logger.py
 COPY status.html /app/status.html
 COPY docs /app/docs
+RUN mkdir -p /app/license
 COPY license /app/license
 
 EXPOSE 7860
