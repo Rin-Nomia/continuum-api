@@ -140,6 +140,14 @@ def _safe_str(v, default: str = "") -> str:
         return default
 
 
+def _env_first(*names: str) -> str:
+    for name in names:
+        value = os.environ.get(name, "").strip()
+        if value:
+            return value
+    return ""
+
+
 def _decision_from_mode(mode: str) -> str:
     m = _safe_str(mode, "").strip().lower()
     if m == "no-op":
@@ -438,8 +446,11 @@ async def lifespan(app: FastAPI):
             raise RuntimeError(f"license_startup_blocked:{reason}")
         logger.warning(f"Startup in degraded mode due to invalid license: {reason}")
 
-    token = os.environ.get("GITHUB_TOKEN")
-    repo = os.environ.get("GITHUB_REPO")
+    # Backward-compatible aliases:
+    # - preferred: GITHUB_TOKEN / GITHUB_REPO
+    # - legacy:    GH_TOKEN / GH_REPO
+    token = _env_first("GITHUB_TOKEN", "GH_TOKEN")
+    repo = _env_first("GITHUB_REPO", "GH_REPO")
     if token and repo:
         try:
             github_backup = GitHubBackup(log_dir="logs")

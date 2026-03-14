@@ -91,6 +91,14 @@ def _safe_str(v: Any, default: str = "") -> str:
         return default
 
 
+def _env_first(*names: str) -> str:
+    for name in names:
+        val = os.environ.get(name, "").strip()
+        if val:
+            return val
+    return ""
+
+
 # ----------------------------
 # Safety scrub (defense-in-depth)
 # ----------------------------
@@ -240,8 +248,11 @@ class GitHubWriter:
     """
 
     def __init__(self):
-        self.github_token = os.environ.get("GITHUB_TOKEN")
-        self.github_repo = os.environ.get("GITHUB_REPO")  # owner/repo
+        # Backward-compatible aliases:
+        # - preferred: GITHUB_TOKEN / GITHUB_REPO
+        # - legacy:    GH_TOKEN / GH_REPO
+        self.github_token = _env_first("GITHUB_TOKEN", "GH_TOKEN")
+        self.github_repo = _env_first("GITHUB_REPO", "GH_REPO")  # owner/repo
         self.github_ref = os.environ.get("GITHUB_REF", "").strip()  # optional branch/ref
 
         self.enabled = bool(self.github_token and self.github_repo)
@@ -312,7 +323,7 @@ class DataLogger:
         self._last_analysis_ts: Optional[str] = None
 
         if self.writer.enabled:
-            print(f"[DataLogger] GitHub logging enabled -> {os.environ.get('GITHUB_REPO')}")
+            print(f"[DataLogger] GitHub logging enabled -> {_env_first('GITHUB_REPO', 'GH_REPO')}")
         else:
             print("[DataLogger] GitHub credentials not set; logging will be runtime-only (in-memory stats).")
 
@@ -494,7 +505,7 @@ class DataLogger:
         return {
             "logger": {
                 "enabled": self.writer.enabled,
-                "repo": os.environ.get("GITHUB_REPO") if self.writer.enabled else None,
+                "repo": (_env_first("GITHUB_REPO", "GH_REPO") if self.writer.enabled else None),
                 "ref": os.environ.get("GITHUB_REF") if self.writer.enabled else None,
                 "salted": bool(self._salt),
             },
