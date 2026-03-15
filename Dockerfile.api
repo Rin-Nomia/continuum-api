@@ -26,6 +26,7 @@ RUN git clone --depth 1 --branch "${Z1_MVP_REF}" "${Z1_MVP_REPO}" /tmp/z1_mvp \
 COPY app.py /app/app.py
 COPY logger.py /app/logger.py
 COPY status.html /app/status.html
+RUN mkdir -p /app/docs
 COPY docs /app/docs
 RUN mkdir -p /app/license
 COPY license /app/license
