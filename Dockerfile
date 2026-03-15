@@ -13,21 +13,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r /app/requirements.txt
 
-# Sync core/pipeline/configs from z1-mvp
-ARG Z1_MVP_REPO=https://github.com/Rin-Nomia/z1_mvp.git
-ARG Z1_MVP_REF=main
-RUN git clone --depth 1 --branch "${Z1_MVP_REF}" "${Z1_MVP_REPO}" /tmp/z1_mvp \
-    && cp -r /tmp/z1_mvp/core /app/core \
-    && cp -r /tmp/z1_mvp/pipeline /app/pipeline \
-    && cp -r /tmp/z1_mvp/configs /app/configs \
-    && rm -rf /tmp/z1_mvp
-
 COPY app.py /app/app.py
 COPY logger.py /app/logger.py
 COPY status.html /app/status.html
+COPY core /app/core
+COPY pipeline /app/pipeline
+COPY configs /app/configs
 
-# docs and license are created as empty dirs at build time
-# actual license file is mounted or uploaded at runtime via C3 dashboard
 RUN mkdir -p /app/docs
 RUN mkdir -p /app/license
 
