@@ -9,8 +9,6 @@ env:
   SOURCE_REPO: Rin-Nomia/z1_mvp
   HF_USERNAME: RinNomia
   HF_SPACE: continuum-api
-
-  # ⏱️ HF Hub timeout（保留）
   HF_HUB_ETAG_TIMEOUT: "60"
   HF_HUB_DOWNLOAD_TIMEOUT: "60"
 
@@ -20,13 +18,11 @@ jobs:
     timeout-minutes: 25
 
     steps:
-      # 關卡 1：抓取 continuum-api
       - name: 關卡 1 - Checkout continuum-api
         uses: actions/checkout@v4
         with:
           path: continuum-api
 
-      # 關卡 2：抓取 z1_mvp
       - name: 關卡 2 - Checkout z1_mvp
         uses: actions/checkout@v4
         with:
@@ -34,26 +30,23 @@ jobs:
           token: ${{ secrets.GH_PAT }}
           path: z1_mvp
 
-      # 關卡 3：複製核心資料夾
       - name: 關卡 3 - 複製 pipeline, core, configs
         run: |
-          echo "📦 同步核心模組..."
+          echo "同步核心模組..."
           rm -rf continuum-api/pipeline continuum-api/core continuum-api/configs
 
           cp -r z1_mvp/pipeline continuum-api/
           cp -r z1_mvp/core continuum-api/
           cp -r z1_mvp/configs continuum-api/
 
-          echo "✅ 同步完成"
+          echo "同步完成"
           ls -lh continuum-api/
 
-      # 關卡 4：設定 Python
       - name: 關卡 4 - Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      # 關卡 5：Pipeline 測試（不動）
       - name: 關卡 5 - 測試 Pipeline
         working-directory: continuum-api
         env:
@@ -69,12 +62,11 @@ jobs:
           result = pipeline.process(text)
 
           if result.get("error"):
-              raise SystemExit("❌ Pipeline 測試失敗")
+              raise SystemExit("Pipeline 測試失敗")
 
-          print("✅ Pipeline OK")
+          print("Pipeline OK")
           PYTEST
 
-      # 關卡 5.5：建立乾淨 dist/
       - name: 關卡 5.5 - 建立 dist/
         working-directory: continuum-api
         run: |
@@ -98,10 +90,9 @@ jobs:
             --exclude "*.zip" \
             ./ dist/
 
-          echo "📦 dist 大小："
+          echo "dist 大小："
           du -sh dist
 
-      # 關卡 6：部署到 HuggingFace（分批上傳，防 timeout）
       - name: 關卡 6 - Deploy to HuggingFace (split upload)
         working-directory: continuum-api
         env:
@@ -112,7 +103,6 @@ jobs:
           python << 'PYDEPLOY'
           import os, time
           from huggingface_hub import HfApi
-          from datetime import datetime
 
           token = os.environ["HF_TOKEN"]
           repo_id = f"{os.environ['HF_USERNAME']}/{os.environ['HF_SPACE']}"
@@ -124,10 +114,19 @@ jobs:
           except Exception:
               api.create_repo(repo_id=repo_id, repo_type="space", space_sdk="docker")
 
-          print("📤 分批上傳 dist 內容...")
+          print("分批上傳 dist 內容...")
 
-          files = ["app.py", "Dockerfile", "requirements.txt", "README.md"]
-          folders = ["pipeline", "core", "configs", "utils"]
+          # 修正：加入 logger.py 和 status.html
+          files = [
+              "app.py",
+              "Dockerfile",
+              "requirements.txt",
+              "README.md",
+              "logger.py",
+              "status.html",
+          ]
+
+          folders = ["pipeline", "core", "configs", "utils", "docs", "license"]
 
           for f in files:
               path = f"dist/{f}"
@@ -141,11 +140,13 @@ jobs:
                               repo_type="space",
                               commit_message=f"deploy {f}",
                           )
-                          print(f"✅ {f}")
+                          print(f"OK: {f}")
                           break
                       except Exception as e:
-                          print(f"⚠️ {f} retry {i+1}")
+                          print(f"FAIL: {f} retry {i+1}: {e}")
                           time.sleep(3)
+              else:
+                  print(f"SKIP: {f} (not found)")
 
           for folder in folders:
               path = f"dist/{folder}"
@@ -159,11 +160,14 @@ jobs:
                               repo_type="space",
                               commit_message=f"deploy {folder}/",
                           )
-                          print(f"✅ {folder}/")
+                          print(f"OK: {folder}/")
                           break
                       except Exception as e:
-                          print(f"⚠️ {folder}/ retry {i+1}")
+                          print(f"FAIL: {folder}/ retry {i+1}: {e}")
                           time.sleep(5)
+              else:
+                  print(f"SKIP: {folder}/ (not found)")
 
-          print("🎉 部署完成")
+          print("部署完成")
+          print(f"https://huggingface.co/spaces/{repo_id}")
           PYDEPLOY
