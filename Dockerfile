@@ -16,6 +16,7 @@ RUN pip install --no-cache-dir -r /app/requirements.txt
 COPY app.py /app/app.py
 COPY logger.py /app/logger.py
 COPY status.html /app/status.html
+COPY playground.html /app/playground.html
 COPY core /app/core
 COPY pipeline /app/pipeline
 COPY configs /app/configs
