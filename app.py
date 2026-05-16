@@ -577,6 +577,11 @@ async def status_dashboard():
     return FileResponse(os.path.join(BASE_DIR, "status.html"))
 
 
+@app.get("/playground", include_in_schema=False)
+async def playground_page():
+    return FileResponse(os.path.join(BASE_DIR, "playground.html"))
+    
+
 @app.get("/api/v1/status")
 async def runtime_status():
     return {
