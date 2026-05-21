@@ -1,7 +1,7 @@
 {
   "license_id": "customer-acme-prod-001",
   "customer_name": "Acme Corp",
-  "plan": "enterprise",
+  "plan": "oracle",
   "issued_at": "2026-02-15",
   "expiry_date": "2027-02-14",
   "quota_limit": 1200000,

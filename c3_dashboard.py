@@ -37,9 +37,9 @@ except Exception:
 
 
 PRICING_TABLE = {
-    "LITE": {"base_monthly_usd": 99, "included_quota": 5_000, "overage_per_1k_usd": 6.0},
-    "PRO": {"base_monthly_usd": 499, "included_quota": 50_000, "overage_per_1k_usd": 3.0},
-    "ENTERPRISE": {"base_monthly_usd": 1_999, "included_quota": 500_000, "overage_per_1k_usd": 1.8},
+    "SENTINEL": {"base_monthly_usd": 299, "included_quota": 5_000, "overage_per_1k_usd": 6.0},
+    "SHIELD": {"base_monthly_usd": 999, "included_quota": 50_000, "overage_per_1k_usd": 3.0},
+    "ORACLE": {"base_monthly_usd": 3_999, "included_quota": 500_000, "overage_per_1k_usd": 1.8},
 }
 
 
@@ -275,8 +275,8 @@ def _license_days_left(expiry_date: str) -> int:
 
 
 def _license_tier(payload: Dict[str, Any]) -> str:
-    tier = str(payload.get("tier", payload.get("plan", "PRO"))).strip().upper()
-    return tier if tier in PRICING_TABLE else "PRO"
+    tier = str(payload.get("tier", payload.get("plan", "SHIELD"))).strip().upper()
+    return tier if tier in PRICING_TABLE else "SHIELD"
 
 
 def _fetch_monthly_counts(conn: sqlite3.Connection, month_key: str) -> Dict[str, int]:
@@ -395,7 +395,7 @@ def _verify_heartbeat(meta: Dict[str, str], key: str) -> Dict[str, Any]:
 
 
 def _build_cost_estimate(tier: str, usage_count: int, quota_limit: int) -> Dict[str, Any]:
-    cfg = PRICING_TABLE.get(tier.upper(), PRICING_TABLE["PRO"])
+    cfg = PRICING_TABLE.get(tier.upper(), PRICING_TABLE["SHIELD"])
     included_quota = int(cfg["included_quota"])
     effective_quota = max(quota_limit, included_quota)
     overage = max(0, usage_count - effective_quota)
