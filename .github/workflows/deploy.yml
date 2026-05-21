@@ -86,7 +86,7 @@ jobs:
                       print(f"⚠️  {file} 上傳失敗: {e}")
           
           # 上傳資料夾
-          folders = ["pipeline", "core", "configs", "utils"]
+          folders = ["pipeline", "core", "configs", "utils", "docs", "license"]
           for folder in folders:
               if os.path.exists(folder):
                   try:
