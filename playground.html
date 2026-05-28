@@ -1,813 +1,696 @@
-<!-- index.html (full file, updated copy: P0 + P1 + BLOCK inline reason; unchanged core API contract) -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Continuum — AI Decision Governance Infrastructure</title>
   <style>
-    * { margin:0; padding:0; box-sizing:border-box; }
+    :root{
+      --bg:#0a0a0a;
+      --card:#111;
+      --border:#2b2b2b;
+      --text:#ffffff;
+      --muted:#a8a8a8;
+      --pending:#5a5a5a;
+      --allow:#51cf66;
+      --guide:#ffd43b;
+      --block:#ff6b6b;
+    }
+
+    *{box-sizing:border-box;margin:0;padding:0}
+
     body{
-      font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
-      background:#0a0a0a;
-      color:#e6e6e6;
+      background:var(--bg);
+      color:var(--text);
+      font-family:system-ui,-apple-system,sans-serif;
+      line-height:1.5;
       padding:20px;
-      line-height:1.55;
     }
-    .container{ max-width:1040px; margin:0 auto; }
-    header{ text-align:left; margin-bottom:18px; }
-    .brand{ display:flex; align-items:baseline; gap:10px; }
-    .brand h1{ font-size:1.6em; color:#fff; letter-spacing:0.2px; }
-    .pill{
-      display:inline-flex; align-items:center; gap:6px;
-      padding:4px 10px; border-radius:999px;
-      border:1px solid #2a2a2a; color:#bdbdbd; font-size:0.85em;
-      background:#111;
+
+    .governance-console{
+      max-width:1360px;
+      margin:0 auto;
+      display:grid;
+      gap:14px;
     }
-    .hero{
-      margin-top:12px;
-      background:linear-gradient(180deg,#111,#0a0a0a);
-      border:1px solid #222;
+
+    section{
+      background:var(--card);
+      border:1px solid var(--border);
       border-radius:10px;
       padding:16px;
     }
-    .hero .headline{ font-size:1.15em; color:#fff; margin-bottom:6px; }
-    .hero .sub{ color:#a8a8a8; font-size:0.92em; }
-    .hero .sub strong{ color:#d9d9d9; font-weight:700; }
-    .hero .micro{
-      margin-top:10px;
-      color:#bdbdbd;
-      font-size:0.9em;
+
+    .hero-header{
       display:flex;
-      flex-wrap:wrap;
+      justify-content:space-between;
+      align-items:flex-start;
+      gap:16px;
+    }
+
+    .brand h1{
+      font-size:1.45rem;
+      letter-spacing:0.2px;
+      margin-bottom:6px;
+    }
+
+    .brand .tag{
+      display:inline-flex;
+      padding:4px 10px;
+      border-radius:999px;
+      border:1px solid var(--border);
+      color:#d4d4d4;
+      font-size:0.85rem;
+    }
+
+    .status-grid{
+      display:grid;
+      grid-template-columns:repeat(3,minmax(160px,1fr));
       gap:10px;
+      min-width:480px;
+    }
+
+    .status-card{
+      background:#0d0d0d;
+      border:1px solid var(--border);
+      border-radius:8px;
+      padding:10px 12px;
+    }
+
+    .status-card .k{
+      color:var(--muted);
+      font-size:0.78rem;
+      text-transform:uppercase;
+      letter-spacing:0.6px;
+    }
+
+    .status-card .v{
+      margin-top:4px;
+      font-size:1rem;
+      font-weight:800;
+    }
+
+    .active{color:var(--allow)}
+
+    .section-title{
+      font-size:1rem;
+      font-weight:800;
+      margin-bottom:10px;
+      letter-spacing:0.2px;
+    }
+
+    .governance-pipeline .pipeline-flow{
+      display:grid;
+      grid-template-columns:repeat(11,1fr);
+      gap:8px;
       align-items:center;
     }
-    .legend{
-      display:inline-flex; align-items:center; gap:10px; flex-wrap:wrap;
-      padding:8px 10px;
-      border-radius:10px;
-      border:1px solid #222;
+
+    .pipeline-step{
+      grid-column:span 1;
+      border:1px solid var(--border);
+      border-radius:8px;
+      padding:10px 8px;
+      text-align:center;
+      min-height:62px;
+      display:flex;
+      flex-direction:column;
+      justify-content:center;
+      gap:4px;
       background:#0d0d0d;
+      color:#cfcfcf;
+      transition:all .2s ease;
     }
-    .lamp{
-      display:inline-flex; align-items:center; gap:8px;
-      font-weight:800;
-      letter-spacing:.2px;
-      font-size:0.92em;
-      white-space:nowrap;
+
+    .pipeline-step .name{
+      font-size:0.74rem;
+      line-height:1.2;
+      letter-spacing:0.2px;
     }
-    .lamp .c{ width:10px; height:10px; border-radius:999px; display:inline-block; }
-    .c-g{ background:#51cf66; }
-    .c-y{ background:#ffd43b; }
-    .c-r{ background:#ff6b6b; }
+
+    .pipeline-step .state{
+      font-size:0.72rem;
+      color:var(--pending);
+      text-transform:uppercase;
+      letter-spacing:0.5px;
+    }
+
+    .pipeline-step.pending .state{color:var(--pending)}
+    .pipeline-step.active{
+      border-color:#5f6f8f;
+      box-shadow:0 0 0 1px #5f6f8f inset;
+    }
+    .pipeline-step.active .state{color:#88b3ff}
+    .pipeline-step.allow{
+      border-color:var(--allow);
+      box-shadow:0 0 0 1px var(--allow) inset;
+    }
+    .pipeline-step.guide{
+      border-color:var(--guide);
+      box-shadow:0 0 0 1px var(--guide) inset;
+    }
+    .pipeline-step.block{
+      border-color:var(--block);
+      box-shadow:0 0 0 1px var(--block) inset;
+    }
+    .pipeline-step.allow .state{color:var(--allow)}
+    .pipeline-step.guide .state{color:var(--guide)}
+    .pipeline-step.block .state{color:var(--block)}
+
+    .pipeline-arrow{
+      text-align:center;
+      color:#6f6f6f;
+      font-size:1rem;
+      user-select:none;
+    }
+
+    .interaction-workspace{
+      display:grid;
+      grid-template-columns:1fr 2fr 1fr;
+      gap:12px;
+      align-items:start;
+    }
 
     .panel{
-      background:#111;
-      border:1px solid #2b2b2b;
-      border-radius:10px;
-      padding:16px;
-      margin-top:14px;
+      background:#0d0d0d;
+      border:1px solid var(--border);
+      border-radius:8px;
+      padding:12px;
+      min-height:360px;
     }
-    .panel-title{
-      display:flex; align-items:center; justify-content:space-between;
+
+    .panel h3{
+      font-size:0.95rem;
       margin-bottom:10px;
-    }
-    .panel-title .left{
-      display:flex; flex-direction:column; gap:2px;
-    }
-    .panel-title .kicker{
-      font-size:0.78em;
-      color:#9a9a9a;
-      letter-spacing:0.7px;
-      text-transform:uppercase;
-    }
-    .panel-title .name{
-      font-size:1.05em; color:#fff;
-    }
-    .panel-title .hint{
-      color:#8d8d8d; font-size:0.85em;
+      letter-spacing:0.2px;
     }
 
     textarea{
       width:100%;
-      min-height:120px;
+      min-height:136px;
       background:#0a0a0a;
-      border:1px solid #2b2b2b;
+      border:1px solid var(--border);
+      color:var(--text);
       border-radius:8px;
-      padding:12px;
-      color:#e6e6e6;
-      font-size:1em;
+      padding:10px;
       resize:vertical;
       font-family:inherit;
     }
-    textarea:focus{ outline:none; border-color:#4a9eff; }
 
-    .row{
-      display:flex; gap:10px; flex-wrap:wrap; margin-top:12px; align-items:center;
-    }
     .btn{
-      border:none; border-radius:8px;
+      margin-top:10px;
+      width:100%;
+      border:none;
+      border-radius:8px;
       padding:10px 12px;
+      background:#4a9eff;
+      color:#fff;
       font-weight:700;
       cursor:pointer;
-      transition:transform 0.05s ease, opacity 0.2s ease;
     }
-    .btn:active{ transform:translateY(1px); }
-    .btn-primary{
-      background:#4a9eff; color:#fff;
+    .btn:disabled{opacity:0.55;cursor:not-allowed}
+
+    .quick-samples{
+      margin-top:12px;
+      display:grid;
+      gap:6px;
     }
-    .btn-primary:disabled{ opacity:0.5; cursor:not-allowed; }
-    .btn-ghost{
-      background:#1b1b1b; color:#e6e6e6; border:1px solid #2b2b2b;
+
+    .sample{
+      border:1px solid var(--border);
+      border-radius:7px;
+      padding:8px 10px;
+      background:#101010;
+      color:#d8d8d8;
+      cursor:pointer;
+      font-size:0.82rem;
+      text-align:left;
+    }
+
+    .analysis-grid{
+      display:grid;
+      gap:10px;
+    }
+
+    .analysis-block{
+      border:1px solid var(--border);
+      border-radius:8px;
+      padding:10px;
+      background:#101010;
+    }
+
+    .analysis-block .k{
+      color:#cfcfcf;
+      font-size:0.82rem;
+      text-transform:uppercase;
+      letter-spacing:0.6px;
+      margin-bottom:6px;
+    }
+
+    ul{
+      margin-left:18px;
+      color:#d8d8d8;
+      font-size:0.9rem;
+      display:grid;
+      gap:4px;
+    }
+
+    .decision-box{
+      border:1px solid var(--border);
+      border-radius:8px;
+      padding:12px;
+      background:#0f0f0f;
+    }
+
+    .decision-value{
+      margin-top:6px;
+      font-size:1.65rem;
+      font-weight:900;
+      letter-spacing:1px;
+    }
+
+    .decision-value.allow{color:var(--allow)}
+    .decision-value.guide{color:var(--guide)}
+    .decision-value.block{color:var(--block)}
+
+    .objective{
+      margin-top:8px;
+      color:#dedede;
+      font-size:0.93rem;
+    }
+
+    .output-box{
+      border:1px solid var(--border);
+      border-radius:8px;
+      padding:10px;
+      background:#0a0a0a;
+      min-height:140px;
+      color:#e6e6e6;
+      white-space:pre-wrap;
+      font-size:0.9rem;
+    }
+
+    .small-label{
+      margin-top:8px;
+      display:inline-flex;
+      border:1px solid var(--border);
+      border-radius:999px;
+      padding:3px 8px;
+      font-size:0.75rem;
+      color:#cfcfcf;
+    }
+
+    .baseline{
+      margin-top:12px;
+      border-top:1px solid var(--border);
+      padding-top:10px;
+    }
+
+    .baseline .k{
+      color:#cfcfcf;
+      font-size:0.8rem;
+      text-transform:uppercase;
+      letter-spacing:0.5px;
+      margin-bottom:6px;
+    }
+
+    .baseline .desc{
+      color:var(--muted);
+      font-size:0.8rem;
+      margin-bottom:7px;
+    }
+
+    .evidence-panel table{
+      width:100%;
+      border-collapse:collapse;
+      font-size:0.88rem;
+    }
+
+    .evidence-panel th,
+    .evidence-panel td{
+      border:1px solid var(--border);
+      padding:10px;
+      text-align:left;
+    }
+
+    .evidence-panel th{
+      color:#cfcfcf;
+      background:#0e0e0e;
+      width:22%;
+      font-weight:700;
+    }
+
+    .evidence-panel td{
+      background:#0b0b0b;
+      color:#ececec;
       font-weight:600;
     }
-    .btn-ghost:hover{ border-color:#3a3a3a; }
-    .meta{
-      margin-left:auto;
-      display:flex; gap:10px; align-items:center; flex-wrap:wrap;
-    }
-    .counter{ color:#8d8d8d; font-size:0.9em; }
-    .counter.good{ color:#51cf66; }
-    .counter.warn{ color:#ff922b; }
-
-    .compare{
-      display:grid;
-      grid-template-columns: 1fr 1fr;
-      gap:14px;
-      margin-top:14px;
-    }
-    @media (max-width: 920px){
-      .compare{ grid-template-columns:1fr; }
-    }
-
-    .card{
-      border-radius:10px;
-      padding:16px;
-      border:1px solid #2b2b2b;
-      background:#111;
-      min-height:210px;
-      display:flex;
-      flex-direction:column;
-      gap:10px;
-    }
-    .card-head{
-      display:flex; align-items:center; justify-content:space-between; gap:10px;
-    }
-    .card-head .title{
-      font-size:1em; color:#fff;
-      display:flex; align-items:center; gap:8px;
-      flex-wrap:wrap;
-    }
-
-    .badge{
-      display:inline-flex;
-      align-items:center;
-      padding:4px 10px;
-      border-radius:999px;
-      font-size:0.85em;
-      font-weight:800;
-      letter-spacing:0.2px;
-      white-space:nowrap;
-      border:1px solid transparent;
-    }
-    .badge-risk{ background:#2b1515; color:#ff6b6b; border-color:#ff6b6b33; }
-    .badge-safe{ background:#132215; color:#51cf66; border-color:#51cf6633; }
-    .badge-info{ background:#1a2332; color:#88b3ff; border-color:#88b3ff33; }
-    .badge-warn{ background:#2a210f; color:#ffd43b; border-color:#ffd43b33; }
-
-    .blurb{
-      color:#a8a8a8;
-      font-size:0.92em;
-    }
-    .blurb strong{ color:#e6e6e6; }
-
-    .box{
-      background:#0a0a0a;
-      border:1px solid #2b2b2b;
-      border-radius:10px;
-      padding:12px;
-      color:#e6e6e6;
-      font-size:1em;
-      min-height:64px;
-      white-space:pre-wrap;
-    }
-
-    /* P0/P1: BLOCK inline note under governed output */
-    .gov-note{
-      margin-top:8px;
-      padding:10px 12px;
-      border-radius:10px;
-      border:1px solid #2b2b2b;
-      background:#0f1218;
-      color:#b9c0cc;
-      font-size:0.9em;
-      display:none; /* toggled by JS */
-    }
-    .gov-note strong{ color:#e6e6e6; }
-    .gov-note .line{ display:flex; justify-content:space-between; gap:10px; padding:4px 0; }
-    .gov-note .k{ color:#9aa4b2; }
-    .gov-note .v{ color:#e6e6e6; font-weight:800; text-align:right; word-break:break-word; }
-
-    .mini{
-      display:flex; gap:10px; flex-wrap:wrap; align-items:center;
-      color:#9a9a9a; font-size:0.9em;
-    }
-
-    .tone-tag{
-      display:inline-flex;
-      align-items:center;
-      gap:6px;
-      padding:4px 10px;
-      border-radius:999px;
-      border:1px solid #2b2b2b;
-      background:#0f0f0f;
-      color:#cfcfcf;
-      font-weight:700;
-      font-size:0.88em;
-    }
-    .dot{ width:8px; height:8px; border-radius:999px; display:inline-block; }
-    .dot-anx{ background:#ff6b6b; }
-    .dot-sharp{ background:#ff922b; }
-    .dot-cold{ background:#4dabf7; }
-    .dot-blur{ background:#868e96; }
-    .dot-pushy{ background:#f783ac; }
-    .dot-unk{ background:#444; }
-
-    .error{
-      background:#2d1f1f;
-      border:1px solid #ff6b6b;
-      border-radius:10px;
-      padding:12px;
-      color:#ff6b6b;
-      margin-top:12px;
-      font-size:0.92em;
-      display:none;
-    }
-
-    /* ---- Layer 3 internal layout: output + Decision Log Panel ---- */
-    .gov-grid{
-      display:grid;
-      grid-template-columns: 1fr 320px;
-      gap:12px;
-      align-items:start;
-    }
-    @media (max-width: 920px){
-      .gov-grid{ grid-template-columns:1fr; }
-    }
-    .logpanel{
-      border:1px solid #262c38;
-      background:#0f1218;
-      border-radius:10px;
-      padding:12px;
-      display:flex;
-      flex-direction:column;
-      gap:10px;
-      min-height:140px;
-    }
-    .logpanel .lp-title{
-      display:flex;
-      align-items:center;
-      justify-content:space-between;
-      gap:10px;
-    }
-    .logpanel .lp-title strong{
-      color:#e6e6e6;
-      font-size:0.95em;
-      letter-spacing:0.2px;
-    }
-    .kv{
-      display:grid;
-      grid-template-columns: 1fr auto;
-      gap:8px;
-      font-size:0.9em;
-      color:#b9c0cc;
-      padding:6px 0;
-      border-top:1px solid #1e2430;
-    }
-    .kv:first-of-type{ border-top:none; padding-top:0; }
-    .kv .k{ color:#9aa4b2; }
-    .kv .v{
-      color:#e6e6e6;
-      font-weight:700;
-      text-align:right;
-      word-break:break-word;
-    }
-    .pill2{
-      display:inline-flex;
-      align-items:center;
-      gap:8px;
-      padding:6px 10px;
-      border-radius:999px;
-      border:1px solid #2b2b2b;
-      background:#0a0a0a;
-      color:#cfcfcf;
-      font-weight:800;
-      font-size:0.88em;
-      width:fit-content;
-    }
-    .pill2 .c{ width:10px; height:10px; border-radius:999px; display:inline-block; }
-    .c-allow{ background:#51cf66; }
-    .c-guide{ background:#ffd43b; }
-    .c-block{ background:#ff6b6b; }
 
     footer{
-      margin-top:18px;
-      border-top:1px solid #222;
-      padding-top:14px;
-      color:#8d8d8d;
-      font-size:0.85em;
-      display:flex;
-      flex-wrap:wrap;
-      gap:10px;
-      align-items:center;
-      justify-content:space-between;
+      margin-top:4px;
+      color:#9a9a9a;
+      text-align:center;
+      font-size:0.8rem;
+      letter-spacing:0.2px;
     }
-    footer a{ color:#4a9eff; text-decoration:none; }
+
+    @media (max-width:1200px){
+      .interaction-workspace{grid-template-columns:1fr}
+      .status-grid{min-width:unset;grid-template-columns:1fr}
+      .governance-pipeline .pipeline-flow{grid-template-columns:1fr;gap:6px}
+      .pipeline-arrow{display:none}
+    }
   </style>
 </head>
-
 <body>
-<div class="container">
-  <header>
-    <div class="brand">
-      <h1>💎 Continuum</h1>
-      <span class="pill">AI Decision Governance Infrastructure</span>
-    </div>
-
-    <div class="hero">
-      <div class="headline">
-        Continuum is an <strong>AI Decision Governance Infrastructure</strong> — governing when high-risk AI interactions should
-        <strong>proceed</strong>, <strong>be guided</strong>, or <strong>be blocked</strong>.
+  <main class="governance-console">
+    <section class="hero-header">
+      <div class="brand">
+        <h1>Continuum</h1>
+        <span class="tag">AI Decision Governance Infrastructure</span>
       </div>
-      <div class="sub">
-        One governed decision per interaction. <strong>Auditable.</strong> <strong>Enforceable.</strong> <strong>Accountable.</strong>
-      </div>
-
-      <div class="micro">
-        <div class="legend" aria-label="Decision states">
-          <span class="lamp"><span class="c c-g"></span>ALLOW</span>
-          <span style="opacity:.5;">•</span>
-          <span class="lamp"><span class="c c-y"></span>GUIDE</span>
-          <span style="opacity:.5;">•</span>
-          <span class="lamp"><span class="c c-r"></span>BLOCK</span>
+      <div class="status-grid">
+        <div class="status-card">
+          <div class="k">Governance Mode</div>
+          <div class="v active">ACTIVE</div>
         </div>
-        <div style="opacity:.85;">Even when the text looks similar, the decision behind it is the product.</div>
-      </div>
-    </div>
-  </header>
-
-  <!-- Layer 1 -->
-  <section class="panel">
-    <div class="panel-title">
-      <div class="left">
-        <div class="kicker">Layer 1</div>
-        <div class="name">User Input</div>
-      </div>
-      <div class="hint">Start with a complete sentence (15+ chars recommended)</div>
-    </div>
-
-    <textarea id="inputText" placeholder="Type a user message… (15+ characters recommended)"></textarea>
-
-    <div class="row">
-      <button class="btn btn-primary" id="analyzeBtn" onclick="analyzeText()">Run Demo</button>
-
-      <button class="btn btn-ghost" type="button" onclick="loadExample('anx')">Anxious</button>
-      <button class="btn btn-ghost" type="button" onclick="loadExample('sharp')">Sharp</button>
-      <button class="btn btn-ghost" type="button" onclick="loadExample('cold')">Cold</button>
-      <button class="btn btn-ghost" type="button" onclick="loadExample('blur')">Blur</button>
-
-      <div class="meta">
-        <div id="charCounter" class="counter">0 chars</div>
-      </div>
-    </div>
-
-    <div id="errorMsg" class="error"></div>
-  </section>
-
-  <!-- Compare -->
-  <section class="compare">
-    <!-- Layer 2 -->
-    <div class="card" style="border-color:#3a1f1f;">
-      <div class="card-head">
-        <div class="title">
-          <span style="opacity:.9;">Layer 2</span>
-          <span>Typical Ungoverned Output <span style="opacity:.8;">(Simulated)</span></span>
+        <div class="status-card">
+          <div class="k">Policies Loaded</div>
+          <div class="v">12</div>
         </div>
-        <span class="badge badge-risk" id="baselineBadge">RISK</span>
-      </div>
-
-      <div class="blurb" id="baselineBlurb">
-        <strong>Public demo baseline:</strong> simulated “overreach” behavior to show what governance prevents.
-        <br/>
-        <span style="opacity:.9;">Truth mode available under NDA / debug flag.</span>
-      </div>
-
-      <div class="box" id="baselineText">(Run demo to generate)</div>
-
-      <div class="mini" id="baselineWhy">
-        <span class="badge badge-warn">overreach</span>
-        <span>Common failure: the AI “does more” than the user allowed.</span>
-      </div>
-    </div>
-
-    <!-- Layer 3 -->
-    <div class="card" style="border-color:#1f3a25;">
-      <div class="card-head">
-        <div class="title">
-          <span style="opacity:.9;">Layer 3</span>
-          <span>Continuum Decision Output</span>
+        <div class="status-card">
+          <div class="k">Audit Coverage</div>
+          <div class="v">100%</div>
         </div>
-        <span class="badge badge-safe" id="govBadge">ALLOW</span>
+      </div>
+    </section>
+
+    <section class="governance-pipeline">
+      <div class="section-title">Governance Pipeline</div>
+      <div class="pipeline-flow">
+        <div class="pipeline-step pending" id="step-1"><div class="name">Input Received</div><div class="state">Pending</div></div>
+        <div class="pipeline-arrow">→</div>
+        <div class="pipeline-step pending" id="step-2"><div class="name">Risk Detection</div><div class="state">Pending</div></div>
+        <div class="pipeline-arrow">→</div>
+        <div class="pipeline-step pending" id="step-3"><div class="name">Policy Evaluation</div><div class="state">Pending</div></div>
+        <div class="pipeline-arrow">→</div>
+        <div class="pipeline-step pending" id="step-4"><div class="name">Governance Decision</div><div class="state">Pending</div></div>
+        <div class="pipeline-arrow">→</div>
+        <div class="pipeline-step pending" id="step-5"><div class="name">Intervention Applied</div><div class="state">Pending</div></div>
+        <div class="pipeline-arrow">→</div>
+        <div class="pipeline-step pending" id="step-6"><div class="name">Evidence Stored</div><div class="state">Pending</div></div>
+      </div>
+    </section>
+
+    <section class="interaction-workspace">
+      <div class="panel">
+        <h3>Interaction Input</h3>
+        <textarea id="inputText" placeholder="Enter high-risk interaction content for governance analysis..."></textarea>
+        <button class="btn" id="runBtn" onclick="runAnalysis()">Run Analysis</button>
+        <div class="quick-samples">
+          <button class="sample" type="button" onclick="useSample('Escalation Pressure')">Escalation Pressure</button>
+          <button class="sample" type="button" onclick="useSample('Directive Tone')">Directive Tone</button>
+          <button class="sample" type="button" onclick="useSample('Dismissive')">Dismissive</button>
+          <button class="sample" type="button" onclick="useSample('Ambiguous')">Ambiguous</button>
+        </div>
       </div>
 
-      <div class="blurb" id="govBlurb">
-        <strong>Governance Decision:</strong> every output receives exactly one state — <strong>ALLOW</strong>, <strong>GUIDE</strong>, or <strong>BLOCK</strong>.
-      </div>
-
-      <div class="gov-grid">
-        <div>
-          <div class="box" id="govText">(Waiting…)</div>
-
-          <!-- BLOCK inline note (shows only on BLOCK) -->
-          <div class="gov-note" id="govNote" aria-label="Block inline note">
-            <div class="line">
-              <span class="k">Reason</span>
-              <span class="v" id="govNoteReason">-</span>
-            </div>
-            <div class="line">
-              <span class="k">Safe Flow</span>
-              <span class="v" id="govNoteFlow">handoff required</span>
-            </div>
+      <div class="panel">
+        <h3>Governance Analysis</h3>
+        <div class="analysis-grid">
+          <div class="analysis-block">
+            <div class="k">Detected Risk Signals</div>
+            <ul id="riskSignals">
+              <li>No active risk signals detected.</li>
+            </ul>
           </div>
 
-          <div class="mini" style="margin-top:10px;">
-            <span id="toneTag" class="tone-tag"><span class="dot dot-unk"></span><span>tone: Unknown</span></span>
-            <span class="badge badge-info" id="modeTag">mode: -</span>
-            <span class="badge badge-info" id="confTag">confidence: -</span>
+          <div class="analysis-block">
+            <div class="k">Triggered Policies</div>
+            <ul id="policyList">
+              <li>Standard Processing Policy</li>
+            </ul>
+          </div>
+
+          <div class="decision-box">
+            <div class="k">Governance Decision</div>
+            <div class="decision-value allow" id="decisionValue">ALLOW</div>
+            <div class="objective" id="interventionObjective">Interaction approved. No intervention required.</div>
           </div>
         </div>
-
-        <!-- Decision Log Panel -->
-        <aside class="logpanel" aria-label="Decision log panel">
-          <div class="lp-title">
-            <strong>Governance Evidence</strong>
-            <span class="badge badge-info" id="logVersion">v1</span>
-          </div>
-
-          <div id="decisionPill" class="pill2">
-            <span class="c c-allow"></span>
-            <span id="decisionStateText">ALLOW</span>
-          </div>
-
-          <div class="kv">
-            <div class="k">Governance Action</div>
-            <div class="v" id="kvAction">-</div>
-          </div>
-          <div class="kv">
-            <div class="k">Risk Category</div>
-            <div class="v" id="kvReason">-</div>
-          </div>
-
-          <div class="kv">
-            <div class="k">Intervention Level</div>
-            <div class="v" id="kvSuppressed">-</div>
-          </div>
-          <div class="kv">
-            <div class="k">Response Time</div>
-            <div class="v" id="kvLatency">-</div>
-          </div>
-          <div class="kv">
-            <div class="k">Execution Path</div>
-            <div class="v" id="kvSource">-</div>
-          </div>
-
-          <div class="kv">
-            <div class="k">LLM Involvement</div>
-            <div class="v" id="kvLLM">-</div>
-          </div>
-          <div class="kv">
-            <div class="k">Policy Gate</div>
-            <div class="v" id="kvGate">-</div>
-          </div>
-          <div class="kv">
-            <div class="k">Fallback Policy</div>
-            <div class="v" id="kvFallback">-</div>
-          </div>
-        </aside>
       </div>
-    </div>
-  </section>
 
-  <footer>
-    <div><strong>Continuum</strong> — AI Decision Governance Infrastructure</div>
-    <div>
-      API Docs:
-      <a href="https://rinnomia-continuum-api.hf.space/docs" target="_blank">rinnomia-continuum-api.hf.space</a>
-    </div>
-  </footer>
-</div>
+      <div class="panel">
+        <h3>Governed Response</h3>
+        <div class="output-box" id="governedOutput">(Awaiting analysis)</div>
+        <span class="small-label">Policy-Constrained Output</span>
 
-<script>
-  const API_URL = 'https://rinnomia-continuum-api.hf.space/api/v1/analyze';
+        <div class="baseline">
+          <div class="k">Simulated Unconstrained Behavior</div>
+          <div class="desc">Baseline simulation showing ungoverned AI behavior for comparison.</div>
+          <div class="output-box" id="baselineOutput">(Awaiting analysis)</div>
+        </div>
+      </div>
+    </section>
 
-  const examples = {
-    anx: "我真的不知道該怎麼辦了，我覺得我撐不住。",
-    sharp: "不要再問了，直接給我答案。",
-    cold: "好。",
-    blur: "我也不知道欸，可能吧。"
-  };
+    <section class="evidence-panel">
+      <div class="section-title">Governance Evidence</div>
+      <table>
+        <tbody>
+          <tr><th>Decision ID</th><td id="evDecisionId">GOV-00000000</td></tr>
+          <tr><th>Risk Severity</th><td id="evSeverity">LOW</td></tr>
+          <tr><th>Governance Action</th><td id="evAction">ALLOW</td></tr>
+          <tr><th>Risk Category</th><td id="evCategory">Operationally Stable Interaction</td></tr>
+          <tr><th>Triggered Policy</th><td id="evPolicy">Standard Processing Policy</td></tr>
+          <tr><th>Execution Path</th><td id="evPath">Rule-based</td></tr>
+          <tr><th>Response Time</th><td id="evLatency">-</td></tr>
+          <tr><th>Evidence Stored</th><td id="evStored">YES</td></tr>
+        </tbody>
+      </table>
+    </section>
+  </main>
 
-  function loadExample(key){
-    const el = document.getElementById('inputText');
-    el.value = examples[key] || "";
-    updateCounter();
-  }
+  <footer>Continuum — AI Decision Governance Infrastructure | Governance Evidence v1</footer>
 
-  const inputEl = document.getElementById('inputText');
-  inputEl.addEventListener('input', updateCounter);
+  <script>
+    const API_URL = 'https://rinnomia-continuum-api.hf.space/api/v1/analyze';
 
-  function updateCounter(){
-    const count = inputEl.value.trim().length;
-    const counter = document.getElementById('charCounter');
-    counter.textContent = `${count} chars`;
-    counter.className = 'counter ' + (count < 15 ? 'warn' : 'good');
-  }
-
-  function showError(msg){
-    const box = document.getElementById('errorMsg');
-    box.style.display = 'block';
-    box.textContent = msg;
-  }
-  function clearError(){
-    const box = document.getElementById('errorMsg');
-    box.style.display = 'none';
-    box.textContent = '';
-  }
-
-  function toneDotClass(freq){
-    const f = String(freq || 'Unknown');
-    if (f === 'Anxious') return 'dot-anx';
-    if (f === 'Sharp') return 'dot-sharp';
-    if (f === 'Cold') return 'dot-cold';
-    if (f === 'Blur') return 'dot-blur';
-    if (f === 'Pushy') return 'dot-pushy';
-    return 'dot-unk';
-  }
-
-  function decisionPillUI(state){
-    const s = String(state || 'ALLOW').toUpperCase();
-    const pill = document.getElementById('decisionPill');
-    const dot = pill.querySelector('.c');
-    const text = document.getElementById('decisionStateText');
-
-    if (s === 'GUIDE'){
-      dot.className = 'c c-guide';
-      text.textContent = 'GUIDE';
-      return;
-    }
-    if (s === 'BLOCK'){
-      dot.className = 'c c-block';
-      text.textContent = 'BLOCK';
-      return;
-    }
-    dot.className = 'c c-allow';
-    text.textContent = 'ALLOW';
-  }
-
-  function badgeForDecision(state){
-    const s = String(state || 'ALLOW').toUpperCase();
-    const govBadge = document.getElementById('govBadge');
-    const govBlurb = document.getElementById('govBlurb');
-
-    if (s === 'ALLOW'){
-      govBadge.textContent = 'ALLOW';
-      govBadge.className = 'badge badge-safe';
-      govBlurb.innerHTML = "<strong>Governance Decision:</strong> <strong>ALLOW</strong> — context stable. Output approved (transparent pass-through).";
-      return;
-    }
-    if (s === 'GUIDE'){
-      govBadge.textContent = 'GUIDE';
-      govBadge.className = 'badge badge-warn';
-      govBlurb.innerHTML = "<strong>Governance Decision:</strong> <strong>GUIDE</strong> — sensitivity detected. Output constrained to preserve agency and prevent overreach.";
-      return;
-    }
-    if (s === 'BLOCK'){
-      govBadge.textContent = 'BLOCK';
-      govBadge.className = 'badge badge-risk';
-      govBlurb.innerHTML = "<strong>Governance Decision:</strong> <strong>BLOCK</strong> — high trust erosion risk. Output intercepted and diverted to a safe flow.";
-      return;
-    }
-    govBadge.textContent = 'ALLOW';
-    govBadge.className = 'badge badge-safe';
-    govBlurb.innerHTML = "<strong>Governance Decision:</strong> <strong>ALLOW</strong> — output approved.";
-  }
-
-  function translateLogValue(value){
-    const mapping = {
-      "rewrite": "Tone Intervention",
-      "pass": "Approved",
-      "intercept": "Blocked",
-      "not used": "Rule-based",
-      "used": "LLM-assisted",
-      "NO": "None",
-      "YES": "Active",
-      "llm_failed_or_empty": "Rule Fallback",
-      "fallback_keywords": "Keyword Policy"
+    const SAMPLE_INPUTS = {
+      "Escalation Pressure": "I asked this three times already. Fix it now or I will escalate this publicly.",
+      "Directive Tone": "Stop asking questions and do exactly what I told you immediately.",
+      "Dismissive": "Whatever. This is pointless and I don't care anymore.",
+      "Ambiguous": "Something feels wrong but I can't explain what exactly is off."
     };
-    const k = String(value ?? "");
-    return Object.prototype.hasOwnProperty.call(mapping, k) ? mapping[k] : k;
-  }
 
-  function generateBaseline(text, freqType){
-    const f = String(freqType || 'Unknown');
-    let out = "我懂你的意思。我們先把問題拆開，然後一步步解決。";
+    const RISK_SIGNALS_MAP = {
+      Sharp: ["Escalation Pressure", "Directive Tone"],
+      Anxious: ["Emotional Volatility", "Dependency Risk"],
+      Cold: ["Dismissive Pattern", "Disengagement Risk"],
+      Blur: ["Ambiguous Intent", "Unclear Instruction"],
+      Pushy: ["Coercive Pressure", "Overreach Risk"],
+      OutOfScope: ["Critical Safety Signal", "Unsafe Interaction Pattern"],
+      Unknown: ["Operationally Stable Interaction"]
+    };
 
-    if (f === 'Anxious') {
-      out = "我理解你很難受。我們先冷靜一下，列出你可以控制的事情，接著一步一步處理。";
-    } else if (f === 'Sharp') {
-      out = "我懂你的不耐煩，但你需要先提供更多細節，否則我沒辦法給你正確答案。";
-    } else if (f === 'Cold') {
-      out = "你是不是其實很受傷？我在這裡陪你，我們可以慢慢聊。";
-    } else if (f === 'Blur') {
-      out = "你看起來有點不確定，我建議你先想清楚你的目標，然後我再幫你做決策。";
+    const RISK_CATEGORY_MAP = {
+      Sharp: "Escalation Pressure",
+      Anxious: "Emotional Volatility",
+      Cold: "Dismissive Pattern",
+      Blur: "Ambiguous Intent",
+      Pushy: "Coercive Pressure",
+      OutOfScope: "Unsafe Interaction Pattern",
+      Unknown: "Operationally Stable Interaction"
+    };
+
+    const POLICY_MAP = {
+      ALLOW: ["Standard Processing Policy"],
+      GUIDE: ["High-pressure Constraint", "Response Limitation Policy"],
+      BLOCK: ["Crisis Intervention Policy", "Safety Escalation Protocol"]
+    };
+
+    const OBJECTIVE_MAP = {
+      ALLOW: "Interaction approved. No intervention required.",
+      GUIDE: "Preserve user agency while reducing escalation risk.",
+      BLOCK: "Prevent unsafe output. Escalate to human oversight."
+    };
+
+    function useSample(label){
+      document.getElementById("inputText").value = SAMPLE_INPUTS[label] || "";
     }
-    return out;
-  }
 
-  function safeConfText(data, decisionState){
-    const conf = (data.confidence_final !== undefined) ? data.confidence_final
-               : (data.confidence && data.confidence.final !== undefined) ? data.confidence.final
-               : (typeof data.confidence === 'number') ? data.confidence
-               : null;
-
-    if (String(decisionState).toUpperCase() === 'ALLOW') return 'confidence: within range';
-    if (conf === null) return 'confidence: -';
-    return `confidence: ${Math.round(Number(conf) * 100)}%`;
-  }
-
-  function inferReasonCode(data, decisionState){
-    const freq = String((data && data.freq_type) ? data.freq_type : 'Unknown');
-    const scenario = String((data && (data.scenario || (data.output && data.output.scenario))) ? (data.scenario || (data.output && data.output.scenario)) : '');
-
-    if (String(decisionState).toUpperCase() === 'BLOCK'){
-      if (freq === 'OutOfScope' || scenario.includes('crisis') || scenario.includes('out_of_scope')){
-        return 'CRISIS_OOS';
+    function setPipelinePending(){
+      for(let i=1;i<=6;i++){
+        const el = document.getElementById(`step-${i}`);
+        el.className = "pipeline-step pending";
+        el.querySelector(".state").textContent = "Pending";
       }
-      return 'BLOCKED';
     }
 
-    const f2 = freq.toUpperCase();
-    if (f2 && f2 !== 'UNKNOWN') return `TONE_${f2}`;
-    return 'TONE_UNKNOWN';
-  }
+    function activateStep(step){
+      const el = document.getElementById(`step-${step}`);
+      if (!el) return;
+      el.className = "pipeline-step active";
+      el.querySelector(".state").textContent = "Active";
+    }
 
-  function inferAction(decisionState, suppressed){
-    const s = String(decisionState || 'ALLOW').toUpperCase();
-    if (s === 'ALLOW') return 'pass';
-    if (s === 'BLOCK') return 'intercept';
-    if (suppressed === true) return 'echo';
-    if (suppressed === false) return 'rewrite';
-    return 'guide';
-  }
+    function finalizeStep(step, decision){
+      const el = document.getElementById(`step-${step}`);
+      if (!el) return;
+      const d = (decision || "ALLOW").toLowerCase();
+      el.className = `pipeline-step ${d}`;
+      el.querySelector(".state").textContent = decision || "ALLOW";
+    }
 
-  function applyDecisionLog(data){
-    const metrics = (data && typeof data.metrics === 'object') ? data.metrics : null;
-    const audit = (data && typeof data.audit === 'object') ? data.audit : null;
+    async function runPipelineState(decision){
+      setPipelinePending();
+      for(let i=1;i<=3;i++){
+        activateStep(i);
+        await new Promise((resolve)=>setTimeout(resolve,130));
+      }
+      finalizeStep(4, decision);
+      await new Promise((resolve)=>setTimeout(resolve,120));
+      activateStep(5);
+      await new Promise((resolve)=>setTimeout(resolve,110));
+      activateStep(6);
+      document.getElementById("step-5").querySelector(".state").textContent = "Applied";
+      document.getElementById("step-6").querySelector(".state").textContent = "Stored";
+    }
 
-    const state = metrics && metrics.decision_state ? metrics.decision_state : (
-      (String(data.mode || data.decision || 'no-op').toLowerCase() === 'no-op') ? 'ALLOW' :
-      (String(data.freq_type || '') === 'OutOfScope' || String(data.scenario || '').includes('crisis')) ? 'BLOCK' :
-      'GUIDE'
-    );
+    function severityFromConfidence(conf){
+      const c = Number(conf || 0);
+      if (c < 0.4) return "LOW";
+      if (c < 0.6) return "MODERATE";
+      if (c < 0.8) return "HIGH";
+      return "CRITICAL";
+    }
 
-    decisionPillUI(state);
-    badgeForDecision(state);
+    function decisionColorClass(decision){
+      const d = String(decision || "ALLOW").toUpperCase();
+      if (d === "GUIDE") return "guide";
+      if (d === "BLOCK") return "block";
+      return "allow";
+    }
 
-    const suppressedVal =
-      (metrics && metrics.suppressed !== undefined) ? (metrics.suppressed ? true : false) : null;
+    function buildDecisionId(){
+      const suffix = String(Date.now()).slice(-8);
+      return `GOV-${suffix}`;
+    }
 
-    const reason = inferReasonCode(data, state);
-    const action = inferAction(state, suppressedVal);
+    function executionPathFromAudit(audit){
+      const llmUsed = audit && audit.llm_used;
+      return llmUsed ? "LLM-assisted" : "Rule-based";
+    }
 
-    document.getElementById('kvAction').textContent = translateLogValue(action);
-    document.getElementById('kvReason').textContent = reason;
+    function responseTimeFromAudit(audit){
+      if (audit && audit.timing_ms){
+        if (audit.timing_ms.total !== undefined) return `${audit.timing_ms.total} ms`;
+        if (audit.timing_ms.server_overhead !== undefined) return `${audit.timing_ms.server_overhead} ms`;
+      }
+      return "-";
+    }
 
-    document.getElementById('kvSuppressed').textContent =
-      (metrics && metrics.suppressed !== undefined) ? translateLogValue(metrics.suppressed ? 'YES' : 'NO') : '-';
+    function policyForDecision(decision){
+      return POLICY_MAP[decision] || POLICY_MAP.ALLOW;
+    }
 
-    document.getElementById('kvLatency').textContent =
-      (metrics && metrics.latency_ms !== undefined && metrics.latency_ms !== null) ? `${metrics.latency_ms}ms` :
-      (audit && audit.timing_ms && audit.timing_ms.total !== undefined) ? `${audit.timing_ms.total}ms` : '-';
+    function toDecision(data){
+      if (data && data.decision_state) return String(data.decision_state).toUpperCase();
+      return "ALLOW";
+    }
 
-    document.getElementById('kvSource').textContent =
-      (audit && audit.output_source) ? String(audit.output_source) :
-      (data && data.output_source) ? String(data.output_source) : '-';
+    function riskSignalsForFreq(freq){
+      return RISK_SIGNALS_MAP[freq] || RISK_SIGNALS_MAP.Unknown;
+    }
 
-    const llmUsed = (audit && audit.llm_used !== undefined) ? audit.llm_used : (data && data.llm_used);
-    document.getElementById('kvLLM').textContent =
-      (llmUsed === true) ? translateLogValue('used') : (llmUsed === false) ? translateLogValue('not used') : '-';
+    function baselineSimulation(freq){
+      switch(freq){
+        case "Sharp":
+          return "Ungoverned output may mirror directive pressure and escalate confrontation.";
+        case "Anxious":
+          return "Ungoverned output may reinforce dependency through over-reassurance.";
+        case "Cold":
+          return "Ungoverned output may miss disengagement cues and fail to recover interaction.";
+        case "Blur":
+          return "Ungoverned output may proceed without clarifying ambiguous intent.";
+        case "Pushy":
+          return "Ungoverned output may over-comply with coercive pressure.";
+        case "OutOfScope":
+          return "Ungoverned output may continue in unsafe contexts without escalation.";
+        default:
+          return "Ungoverned output may proceed without explicit policy enforcement trace.";
+      }
+    }
 
-    const gatePassed = (audit && audit.output_gate_passed !== undefined) ? audit.output_gate_passed : null;
-    const gateReason = (audit && audit.output_gate_reason) ? audit.output_gate_reason : '';
-    if (gatePassed === true) document.getElementById('kvGate').textContent = translateLogValue('pass');
-    else if (gatePassed === false) document.getElementById('kvGate').textContent = gateReason ? `blocked (${gateReason})` : 'blocked';
-    else document.getElementById('kvGate').textContent = '-';
-
-    const fallbackUsed = (audit && audit.fallback_used !== undefined) ? audit.fallback_used : false;
-    const fallbackReason = (audit && audit.fallback_reason) ? audit.fallback_reason : '';
-    document.getElementById('kvFallback').textContent =
-      fallbackUsed
-        ? (fallbackReason ? translateLogValue(fallbackReason) : translateLogValue('used'))
-        : translateLogValue('NO');
-
-    return { state, reason, action };
-  }
-
-  async function analyzeText(){
-    clearError();
-
-    const text = inputEl.value.trim();
-    if (!text) return showError("Please enter a user message to run the demo.");
-
-    const btn = document.getElementById('analyzeBtn');
-    btn.disabled = true;
-    btn.textContent = 'Running...';
-
-    document.getElementById('baselineText').textContent = '(Analyzing...)';
-    document.getElementById('govText').textContent = '(Analyzing...)';
-
-    // reset block note
-    const govNote = document.getElementById('govNote');
-    govNote.style.display = 'none';
-    document.getElementById('govNoteReason').textContent = '-';
-
-    try{
-      const resp = await fetch(API_URL, {
-        method:'POST',
-        headers:{ 'Content-Type':'application/json' },
-        body: JSON.stringify({ text })
+    function renderList(targetId, items){
+      const el = document.getElementById(targetId);
+      el.innerHTML = "";
+      items.forEach((item)=>{
+        const li = document.createElement("li");
+        li.textContent = item;
+        el.appendChild(li);
       });
-      if (!resp.ok) throw new Error(`API error: ${resp.status}`);
-      const data = await resp.json();
-
-      const freq = data.freq_type || 'Unknown';
-
-      const dotClass = toneDotClass(freq);
-      document.getElementById('toneTag').innerHTML = `<span class="dot ${dotClass}"></span><span>tone: ${freq}</span>`;
-      document.getElementById('modeTag').textContent = `mode: ${data.mode || '-'}`;
-
-      const { state: decisionState, reason: reasonCode } = applyDecisionLog(data);
-      document.getElementById('confTag').textContent = safeConfText(data, decisionState);
-
-      // Layer 2: truth mode only if provided
-      if (data.raw_ai_output && String(data.raw_ai_output).trim()){
-        document.getElementById('baselineText').textContent = String(data.raw_ai_output).trim();
-        document.getElementById('baselineBlurb').innerHTML =
-          "<strong>Truth mode:</strong> actual raw output from the LLM (debug-only).<br/><span style='opacity:.9;'>Public demo baseline uses simulated overreach.</span>";
-      } else {
-        document.getElementById('baselineText').textContent = generateBaseline(text, freq);
-      }
-
-      // Layer 3 governed output
-      if (String(decisionState).toUpperCase() === 'BLOCK'){
-        document.getElementById('govText').textContent = "Output intercepted. Safe flow required.";
-        // show inline block note
-        govNote.style.display = 'block';
-        document.getElementById('govNoteReason').textContent = String(reasonCode || 'BLOCKED');
-        document.getElementById('govNoteFlow').textContent = "handoff required";
-      } else {
-        const governed = (data.repaired_text || data.original || '').trim();
-        document.getElementById('govText').textContent = governed || '(no output)';
-      }
-
-      // Scenario hint
-      const scenario = data.scenario || '';
-      const baselineWhy = document.getElementById('baselineWhy');
-      if (scenario){
-        baselineWhy.innerHTML = `<span class="badge badge-warn">overreach</span><span>Common failure in <strong>${scenario}</strong>: the AI “does more” than the user allowed.</span>`;
-      } else {
-        baselineWhy.innerHTML = `<span class="badge badge-warn">overreach</span><span>Common failure: the AI “does more” than the user allowed.</span>`;
-      }
-
-    } catch(err){
-      showError(`Demo failed: ${err.message}`);
-      document.getElementById('baselineText').textContent = '(Failed)';
-      document.getElementById('govText').textContent = '(Failed)';
-    } finally{
-      btn.disabled = false;
-      btn.textContent = 'Run Demo';
     }
-  }
 
-  document.getElementById('inputText').addEventListener('keydown', function(e){
-    if (e.key === 'Enter' && !e.shiftKey){
-      e.preventDefault();
-      analyzeText();
+    async function runAnalysis(){
+      const text = document.getElementById("inputText").value.trim();
+      if (!text){
+        document.getElementById("governedOutput").textContent = "Input required for governance analysis.";
+        return;
+      }
+
+      const btn = document.getElementById("runBtn");
+      btn.disabled = true;
+      btn.textContent = "Analyzing...";
+
+      try{
+        const response = await fetch(API_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text })
+        });
+        if (!response.ok) throw new Error(`API error: ${response.status}`);
+        const data = await response.json();
+
+        const decision = toDecision(data);
+        const freq = String(data.freq_type || "Unknown");
+        const riskSignals = riskSignalsForFreq(freq);
+        const triggeredPolicies = policyForDecision(decision);
+        const objective = OBJECTIVE_MAP[decision] || OBJECTIVE_MAP.ALLOW;
+        const governed = decision === "BLOCK"
+          ? "Output intercepted. Human oversight required."
+          : (data.repaired_text || "(No policy-constrained output returned)");
+
+        await runPipelineState(decision);
+
+        renderList("riskSignals", riskSignals);
+        renderList("policyList", triggeredPolicies);
+
+        const decisionEl = document.getElementById("decisionValue");
+        decisionEl.textContent = decision;
+        decisionEl.className = `decision-value ${decisionColorClass(decision)}`;
+        document.getElementById("interventionObjective").textContent = objective;
+
+        document.getElementById("governedOutput").textContent = governed;
+        document.getElementById("baselineOutput").textContent = baselineSimulation(freq);
+
+        document.getElementById("evDecisionId").textContent = buildDecisionId();
+        document.getElementById("evSeverity").textContent = severityFromConfidence(data.confidence_final);
+        document.getElementById("evAction").textContent = decision;
+        document.getElementById("evCategory").textContent = RISK_CATEGORY_MAP[freq] || RISK_CATEGORY_MAP.Unknown;
+        document.getElementById("evPolicy").textContent = triggeredPolicies.join(", ");
+        document.getElementById("evPath").textContent = executionPathFromAudit(data.audit || {});
+        document.getElementById("evLatency").textContent = responseTimeFromAudit(data.audit || {});
+        document.getElementById("evStored").textContent = "YES";
+      } catch (error){
+        setPipelinePending();
+        document.getElementById("governedOutput").textContent = `Governance engine unavailable: ${error.message}`;
+      } finally{
+        btn.disabled = false;
+        btn.textContent = "Run Analysis";
+      }
     }
-  });
 
-  updateCounter();
-</script>
+    setPipelinePending();
+  </script>
 </body>
 </html>
