@@ -92,6 +92,56 @@
 
     .active{color:var(--allow)}
 
+    .global-governance-metrics{
+      background:var(--card);
+      border:1px solid var(--border);
+      border-radius:10px;
+      padding:14px 16px;
+      display:grid;
+      gap:10px;
+    }
+
+    .metrics-title{
+      font-size:0.9rem;
+      color:#d8d8d8;
+      font-weight:700;
+      letter-spacing:0.2px;
+    }
+
+    .metrics-grid{
+      display:grid;
+      grid-template-columns:repeat(4,minmax(120px,1fr));
+      gap:10px;
+    }
+
+    .metric-item{
+      background:#0d0d0d;
+      border:1px solid var(--border);
+      border-radius:8px;
+      padding:10px;
+    }
+
+    .metric-item .label{
+      color:var(--muted);
+      font-size:0.76rem;
+      letter-spacing:0.4px;
+      text-transform:uppercase;
+    }
+
+    .metric-item .value{
+      margin-top:4px;
+      color:var(--text);
+      font-size:1.32rem;
+      font-weight:800;
+      letter-spacing:0.2px;
+    }
+
+    .metrics-footnote{
+      color:#8b8b8b;
+      font-size:0.68rem;
+      letter-spacing:0.2px;
+    }
+
     .section-title{
       font-size:1rem;
       font-weight:800;
@@ -357,6 +407,7 @@
     @media (max-width:1200px){
       .interaction-workspace{grid-template-columns:1fr}
       .status-grid{min-width:unset;grid-template-columns:1fr}
+      .metrics-grid{grid-template-columns:repeat(2,minmax(120px,1fr))}
       .governance-pipeline .pipeline-flow{grid-template-columns:1fr;gap:6px}
       .pipeline-arrow{display:none}
     }
@@ -385,20 +436,43 @@
       </div>
     </section>
 
+    <section class="global-governance-metrics">
+      <div class="metrics-title">Operational Snapshot (Demo Environment)</div>
+      <div class="metrics-grid">
+        <div class="metric-item">
+          <div class="label">Today's Decisions</div>
+          <div class="value">1,284</div>
+        </div>
+        <div class="metric-item">
+          <div class="label">Intervention Rate</div>
+          <div class="value">18%</div>
+        </div>
+        <div class="metric-item">
+          <div class="label">BLOCK Events</div>
+          <div class="value">12</div>
+        </div>
+        <div class="metric-item">
+          <div class="label">Audit Coverage</div>
+          <div class="value">100%</div>
+        </div>
+      </div>
+      <div class="metrics-footnote">Simulated governance telemetry for demonstration purposes.</div>
+    </section>
+
     <section class="governance-pipeline">
       <div class="section-title">Governance Pipeline</div>
       <div class="pipeline-flow">
-        <div class="pipeline-step pending" id="step-1"><div class="name">Input Received</div><div class="state">Pending</div></div>
+        <div class="pipeline-step pending" id="step-1"><div class="name">Input Received</div><div class="state">PENDING</div></div>
         <div class="pipeline-arrow">→</div>
-        <div class="pipeline-step pending" id="step-2"><div class="name">Risk Detection</div><div class="state">Pending</div></div>
+        <div class="pipeline-step pending" id="step-2"><div class="name">Risk Detection</div><div class="state">PENDING</div></div>
         <div class="pipeline-arrow">→</div>
-        <div class="pipeline-step pending" id="step-3"><div class="name">Policy Evaluation</div><div class="state">Pending</div></div>
+        <div class="pipeline-step pending" id="step-3"><div class="name">Policy Evaluation</div><div class="state">PENDING</div></div>
         <div class="pipeline-arrow">→</div>
-        <div class="pipeline-step pending" id="step-4"><div class="name">Governance Decision</div><div class="state">Pending</div></div>
+        <div class="pipeline-step pending" id="step-4"><div class="name">Governance Decision</div><div class="state">PENDING</div></div>
         <div class="pipeline-arrow">→</div>
-        <div class="pipeline-step pending" id="step-5"><div class="name">Intervention Applied</div><div class="state">Pending</div></div>
+        <div class="pipeline-step pending" id="step-5"><div class="name">Intervention Applied</div><div class="state">PENDING</div></div>
         <div class="pipeline-arrow">→</div>
-        <div class="pipeline-step pending" id="step-6"><div class="name">Evidence Stored</div><div class="state">Pending</div></div>
+        <div class="pipeline-step pending" id="step-6"><div class="name">Evidence Stored</div><div class="state">PENDING</div></div>
       </div>
     </section>
 
@@ -522,38 +596,49 @@
       for(let i=1;i<=6;i++){
         const el = document.getElementById(`step-${i}`);
         el.className = "pipeline-step pending";
-        el.querySelector(".state").textContent = "Pending";
+        el.querySelector(".state").textContent = "PENDING";
       }
     }
 
-    function activateStep(step){
+    function setPipelineState(step, className, label){
       const el = document.getElementById(`step-${step}`);
       if (!el) return;
-      el.className = "pipeline-step active";
-      el.querySelector(".state").textContent = "Active";
+      el.className = `pipeline-step ${className}`;
+      el.querySelector(".state").textContent = label;
+    }
+
+    function activateStep(step){
+      setPipelineState(step, "active", "IN PROGRESS");
     }
 
     function finalizeStep(step, decision){
-      const el = document.getElementById(`step-${step}`);
-      if (!el) return;
       const d = (decision || "ALLOW").toLowerCase();
-      el.className = `pipeline-step ${d}`;
-      el.querySelector(".state").textContent = decision || "ALLOW";
+      setPipelineState(step, d, (decision || "ALLOW").toUpperCase());
     }
 
     async function runPipelineState(decision){
       setPipelinePending();
-      for(let i=1;i<=3;i++){
-        activateStep(i);
-        await new Promise((resolve)=>setTimeout(resolve,130));
-      }
+      activateStep(1);
+      await new Promise((resolve)=>setTimeout(resolve,110));
+      setPipelineState(1, "active", "COMPLETED");
+      activateStep(2);
+      await new Promise((resolve)=>setTimeout(resolve,110));
+      setPipelineState(2, "active", "COMPLETED");
+      activateStep(3);
+      await new Promise((resolve)=>setTimeout(resolve,110));
+      setPipelineState(3, "active", "COMPLETED");
       finalizeStep(4, decision);
       await new Promise((resolve)=>setTimeout(resolve,120));
-      activateStep(5);
+      const d = String(decision || "ALLOW").toUpperCase();
+      if (d === "ALLOW"){
+        setPipelineState(5, "allow", "BYPASSED");
+      } else if (d === "GUIDE"){
+        setPipelineState(5, "guide", "APPLIED");
+      } else {
+        setPipelineState(5, "block", "APPLIED");
+      }
       await new Promise((resolve)=>setTimeout(resolve,110));
-      activateStep(6);
-      document.getElementById("step-5").querySelector(".state").textContent = "Applied";
-      document.getElementById("step-6").querySelector(".state").textContent = "Stored";
+      setPipelineState(6, "active", "STORED");
     }
 
     function severityFromConfidence(conf){
