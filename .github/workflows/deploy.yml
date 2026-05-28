@@ -63,14 +63,14 @@ jobs:
           
           # 分批上傳，避免 timeout
           files_to_upload = [
-              "app.py",
-              "Dockerfile",
-              "requirements.txt",
-              "README.md",
-              "playground.html"
-              "c3_dashboard.py",
-              "capture_dashboard_preview.py"
-          ]
+    "app.py",
+    "Dockerfile",
+    "requirements.txt",
+    "README.md",
+    "playground.html",
+    "c3_dashboard.py",
+    "capture_dashboard_preview.py"
+]
           
           for file in files_to_upload:
               if os.path.exists(file):
