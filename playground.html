@@ -422,7 +422,7 @@
       </div>
 
       <div class="blurb" id="govBlurb">
-        <strong>CIP Decision:</strong> every output receives exactly one state — <strong>ALLOW</strong>, <strong>GUIDE</strong>, or <strong>BLOCK</strong>.
+        <strong>Governance Decision:</strong> every output receives exactly one state — <strong>ALLOW</strong>, <strong>GUIDE</strong>, or <strong>BLOCK</strong>.
       </div>
 
       <div class="gov-grid">
@@ -451,7 +451,7 @@
         <!-- Decision Log Panel -->
         <aside class="logpanel" aria-label="Decision log panel">
           <div class="lp-title">
-            <strong>Decision Log</strong>
+            <strong>Governance Evidence</strong>
             <span class="badge badge-info" id="logVersion">v1</span>
           </div>
 
@@ -461,37 +461,37 @@
           </div>
 
           <div class="kv">
-            <div class="k">Action</div>
+            <div class="k">Governance Action</div>
             <div class="v" id="kvAction">-</div>
           </div>
           <div class="kv">
-            <div class="k">Reason Code</div>
+            <div class="k">Risk Category</div>
             <div class="v" id="kvReason">-</div>
           </div>
 
           <div class="kv">
-            <div class="k">Suppression</div>
+            <div class="k">Intervention Level</div>
             <div class="v" id="kvSuppressed">-</div>
           </div>
           <div class="kv">
-            <div class="k">Latency</div>
+            <div class="k">Response Time</div>
             <div class="v" id="kvLatency">-</div>
           </div>
           <div class="kv">
-            <div class="k">Output Source</div>
+            <div class="k">Execution Path</div>
             <div class="v" id="kvSource">-</div>
           </div>
 
           <div class="kv">
-            <div class="k">LLM</div>
+            <div class="k">LLM Involvement</div>
             <div class="v" id="kvLLM">-</div>
           </div>
           <div class="kv">
-            <div class="k">Gate</div>
+            <div class="k">Policy Gate</div>
             <div class="v" id="kvGate">-</div>
           </div>
           <div class="kv">
-            <div class="k">Fallback</div>
+            <div class="k">Fallback Policy</div>
             <div class="v" id="kvFallback">-</div>
           </div>
         </aside>
@@ -583,24 +583,40 @@
     if (s === 'ALLOW'){
       govBadge.textContent = 'ALLOW';
       govBadge.className = 'badge badge-safe';
-      govBlurb.innerHTML = "<strong>CIP Decision:</strong> <strong>ALLOW</strong> — context stable. Output approved (transparent pass-through).";
+      govBlurb.innerHTML = "<strong>Governance Decision:</strong> <strong>ALLOW</strong> — context stable. Output approved (transparent pass-through).";
       return;
     }
     if (s === 'GUIDE'){
       govBadge.textContent = 'GUIDE';
       govBadge.className = 'badge badge-warn';
-      govBlurb.innerHTML = "<strong>CIP Decision:</strong> <strong>GUIDE</strong> — sensitivity detected. Output constrained to preserve agency and prevent overreach.";
+      govBlurb.innerHTML = "<strong>Governance Decision:</strong> <strong>GUIDE</strong> — sensitivity detected. Output constrained to preserve agency and prevent overreach.";
       return;
     }
     if (s === 'BLOCK'){
       govBadge.textContent = 'BLOCK';
       govBadge.className = 'badge badge-risk';
-      govBlurb.innerHTML = "<strong>CIP Decision:</strong> <strong>BLOCK</strong> — high trust erosion risk. Output intercepted and diverted to a safe flow.";
+      govBlurb.innerHTML = "<strong>Governance Decision:</strong> <strong>BLOCK</strong> — high trust erosion risk. Output intercepted and diverted to a safe flow.";
       return;
     }
     govBadge.textContent = 'ALLOW';
     govBadge.className = 'badge badge-safe';
-    govBlurb.innerHTML = "<strong>CIP Decision:</strong> <strong>ALLOW</strong> — output approved.";
+    govBlurb.innerHTML = "<strong>Governance Decision:</strong> <strong>ALLOW</strong> — output approved.";
+  }
+
+  function translateLogValue(value){
+    const mapping = {
+      "rewrite": "Tone Intervention",
+      "pass": "Approved",
+      "intercept": "Blocked",
+      "not used": "Rule-based",
+      "used": "LLM-assisted",
+      "NO": "None",
+      "YES": "Active",
+      "llm_failed_or_empty": "Rule Fallback",
+      "fallback_keywords": "Keyword Policy"
+    };
+    const k = String(value ?? "");
+    return Object.prototype.hasOwnProperty.call(mapping, k) ? mapping[k] : k;
   }
 
   function generateBaseline(text, freqType){
@@ -674,11 +690,11 @@
     const reason = inferReasonCode(data, state);
     const action = inferAction(state, suppressedVal);
 
-    document.getElementById('kvAction').textContent = action;
+    document.getElementById('kvAction').textContent = translateLogValue(action);
     document.getElementById('kvReason').textContent = reason;
 
     document.getElementById('kvSuppressed').textContent =
-      (metrics && metrics.suppressed !== undefined) ? (metrics.suppressed ? 'YES' : 'NO') : '-';
+      (metrics && metrics.suppressed !== undefined) ? translateLogValue(metrics.suppressed ? 'YES' : 'NO') : '-';
 
     document.getElementById('kvLatency').textContent =
       (metrics && metrics.latency_ms !== undefined && metrics.latency_ms !== null) ? `${metrics.latency_ms}ms` :
@@ -690,18 +706,20 @@
 
     const llmUsed = (audit && audit.llm_used !== undefined) ? audit.llm_used : (data && data.llm_used);
     document.getElementById('kvLLM').textContent =
-      (llmUsed === true) ? 'used' : (llmUsed === false) ? 'not used' : '-';
+      (llmUsed === true) ? translateLogValue('used') : (llmUsed === false) ? translateLogValue('not used') : '-';
 
     const gatePassed = (audit && audit.output_gate_passed !== undefined) ? audit.output_gate_passed : null;
     const gateReason = (audit && audit.output_gate_reason) ? audit.output_gate_reason : '';
-    if (gatePassed === true) document.getElementById('kvGate').textContent = 'pass';
+    if (gatePassed === true) document.getElementById('kvGate').textContent = translateLogValue('pass');
     else if (gatePassed === false) document.getElementById('kvGate').textContent = gateReason ? `blocked (${gateReason})` : 'blocked';
     else document.getElementById('kvGate').textContent = '-';
 
     const fallbackUsed = (audit && audit.fallback_used !== undefined) ? audit.fallback_used : false;
     const fallbackReason = (audit && audit.fallback_reason) ? audit.fallback_reason : '';
     document.getElementById('kvFallback').textContent =
-      fallbackUsed ? (fallbackReason ? fallbackReason : 'used') : 'no';
+      fallbackUsed
+        ? (fallbackReason ? translateLogValue(fallbackReason) : translateLogValue('used'))
+        : translateLogValue('NO');
 
     return { state, reason, action };
   }
