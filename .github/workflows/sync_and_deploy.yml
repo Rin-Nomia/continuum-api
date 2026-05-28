@@ -51,6 +51,7 @@ jobs:
         working-directory: continuum-api
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          LOG_SALT: ${{ secrets.LOG_SALT }}
         run: |
           pip install -r requirements.txt
 
@@ -116,7 +117,6 @@ jobs:
 
           print("分批上傳 dist 內容...")
 
-          # 修正：加入 logger.py 和 status.html
           files = [
               "app.py",
               "Dockerfile",
@@ -124,6 +124,7 @@ jobs:
               "README.md",
               "logger.py",
               "status.html",
+              "playground.html",
           ]
 
           folders = ["pipeline", "core", "configs", "utils", "docs", "license"]
