@@ -711,8 +711,7 @@ async def analyze(req: AnalyzeRequest):
     if service_halted_by_license:
         raise HTTPException(503, f"service_halted_by_license:{st.get('reason', 'unknown')}")
     if not st.get("valid", False):
-        # Payment/license semantics: invalid license leads to safe degradation
-        raise HTTPException(402, f"license_invalid:{st.get('reason', 'unknown')}")
+        logger.warning(f"License invalid but continuing in degrade mode: {st.get('reason', 'unknown')}")
 
     if not pipeline:
         detail = "Pipeline not ready"
