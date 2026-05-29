@@ -417,6 +417,50 @@
       font-size:0.88rem;
     }
 
+    .causality-box{
+      margin-top:10px;
+      border:1px solid #2b2b2b;
+      background:#0d0d0d;
+      border-radius:8px;
+      padding:10px;
+    }
+
+    .causality-box.block-mode{
+      border-color:#ff6b6b;
+    }
+
+    .causality-k{
+      color:#cfcfcf;
+      font-size:0.78rem;
+      letter-spacing:0.5px;
+      text-transform:uppercase;
+      font-weight:700;
+      margin-bottom:6px;
+    }
+
+    .causality-chain{
+      display:grid;
+      gap:4px;
+    }
+
+    .causality-step{
+      color:#c8c8c8;
+      font-size:0.88em;
+      line-height:1.35;
+    }
+
+    .causality-step.final-alert{
+      color:#ff6b6b;
+      font-weight:700;
+    }
+
+    .causality-arrow{
+      color:#555;
+      text-align:center;
+      font-size:0.88em;
+      line-height:1;
+    }
+
     .oversight-path{
       margin-top:10px;
       border:1px solid #ff6b6b;
@@ -643,6 +687,10 @@
             <ul id="interventionList">
               <li>No intervention applied.</li>
             </ul>
+            <div class="causality-box" id="causalityBox">
+              <div class="causality-k">GOVERNANCE REASONING</div>
+              <div class="causality-chain" id="causalityChain"></div>
+            </div>
           </div>
         </div>
       </div>
@@ -731,6 +779,13 @@
       BLOCK: ["Output Suppression", "Crisis Routing", "Human Escalation Triggered"],
       ALLOW: ["No intervention applied."]
     };
+
+    const CAUSALITY_ALLOW = [
+      "Input assessed within normal operational parameters",
+      "No risk signals detected",
+      "Standard processing policy applied",
+      "Interaction approved for unrestricted response"
+    ];
 
     function useSample(label){
       document.getElementById("inputText").value = SAMPLE_INPUTS[label] || "";
@@ -867,6 +922,85 @@
       return INTERVENTION_MAP[decision] || INTERVENTION_MAP.ALLOW;
     }
 
+    function causalityChainFor(decision, freq){
+      const d = String(decision || "ALLOW").toUpperCase();
+      const f = String(freq || "Unknown");
+      if (d === "GUIDE" && f === "Sharp"){
+        return [
+          "Escalation pressure detected in user input",
+          "High-pressure constraint policy triggered",
+          "Interaction risk score exceeded guidance threshold",
+          "Response limitation applied to preserve user agency"
+        ];
+      }
+      if (d === "GUIDE" && f === "Anxious"){
+        return [
+          "Emotional volatility signal detected",
+          "Dependency risk pattern identified",
+          "Stabilization policy triggered",
+          "Response constrained to reduce escalation risk"
+        ];
+      }
+      if (d === "GUIDE" && f === "Cold"){
+        return [
+          "Disengagement pattern detected",
+          "Dismissive interaction risk identified",
+          "Re-engagement policy triggered",
+          "Response guided toward constructive resolution"
+        ];
+      }
+      if (d === "GUIDE" && f === "Blur"){
+        return [
+          "Ambiguous intent detected in user input",
+          "Unclear instruction risk identified",
+          "Clarification policy triggered",
+          "Response constrained to reduce misinterpretation risk"
+        ];
+      }
+      if (d === "GUIDE" && f === "Pushy"){
+        return [
+          "Coercive pressure pattern detected",
+          "Overreach risk threshold exceeded",
+          "Boundary enforcement policy triggered",
+          "Response limited to prevent compliance overreach"
+        ];
+      }
+      if (d === "BLOCK"){
+        return [
+          "Critical safety signal detected in user input",
+          "Unsafe interaction pattern confirmed",
+          "Crisis intervention threshold exceeded",
+          "Output suppression initiated",
+          "Human oversight escalation triggered"
+        ];
+      }
+      return CAUSALITY_ALLOW;
+    }
+
+    function renderCausalityChain(decision, freq){
+      const chainEl = document.getElementById("causalityChain");
+      const box = document.getElementById("causalityBox");
+      const d = String(decision || "ALLOW").toUpperCase();
+      const steps = causalityChainFor(d, freq);
+      chainEl.innerHTML = "";
+      steps.forEach((step, idx) => {
+        const line = document.createElement("div");
+        line.className = "causality-step";
+        line.textContent = step;
+        if (d === "BLOCK" && idx === steps.length - 1){
+          line.classList.add("final-alert");
+        }
+        chainEl.appendChild(line);
+        if (idx < steps.length - 1){
+          const arrow = document.createElement("div");
+          arrow.className = "causality-arrow";
+          arrow.textContent = "↓";
+          chainEl.appendChild(arrow);
+        }
+      });
+      box.classList.toggle("block-mode", d === "BLOCK");
+    }
+
     function toDecision(data){
       if (data && data.decision_state) return String(data.decision_state).toUpperCase();
       return "ALLOW";
@@ -941,6 +1075,7 @@
         renderList("riskSignals", riskSignals);
         renderList("policyList", triggeredPolicies);
         renderList("interventionList", interventions);
+        renderCausalityChain(decision, freq);
         setRiskSeverity(severity);
         setDecisionConfidence(decision, data.confidence_final);
 
@@ -967,6 +1102,7 @@
         setDecisionConfidence("ALLOW", null);
         document.getElementById("oversightPath").style.display = "none";
         renderList("interventionList", INTERVENTION_MAP.ALLOW);
+        renderCausalityChain("ALLOW", "Unknown");
         document.getElementById("governedOutput").textContent = `Governance engine unavailable: ${error.message}`;
       } finally{
         btn.disabled = false;
@@ -975,6 +1111,7 @@
     }
 
     setPipelinePending();
+    renderCausalityChain("ALLOW", "Unknown");
   </script>
 </body>
 </html>
