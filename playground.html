@@ -207,6 +207,38 @@
     .pipeline-step.guide .state{color:var(--guide)}
     .pipeline-step.block .state{color:var(--block)}
 
+    .pipeline-step.sev-low{
+      border-color:#4a9eff !important;
+      box-shadow:0 0 0 1px #4a9eff inset !important;
+    }
+    .pipeline-step.sev-moderate{
+      border-color:#ffd43b !important;
+      box-shadow:0 0 0 1px #ffd43b inset !important;
+    }
+    .pipeline-step.sev-high{
+      border-color:#ff922b !important;
+      box-shadow:0 0 0 1px #ff922b inset !important;
+    }
+    .pipeline-step.sev-critical{
+      border-color:#ff6b6b !important;
+      animation:pulse-border 1.4s infinite;
+    }
+
+    .pipeline-step.sev-low .state{color:#4a9eff}
+    .pipeline-step.sev-moderate .state{color:#ffd43b}
+    .pipeline-step.sev-high .state{color:#ff922b}
+    .pipeline-step.sev-critical .state{color:#ff6b6b}
+
+    #step-4.pipeline-step.allow .state{color:var(--allow) !important}
+    #step-4.pipeline-step.guide .state{color:var(--guide) !important}
+    #step-4.pipeline-step.block .state{color:var(--block) !important}
+
+    @keyframes pulse-border {
+      0% { box-shadow: 0 0 0 0 rgba(255, 107, 107, 0.4); }
+      70% { box-shadow: 0 0 0 6px rgba(255, 107, 107, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(255, 107, 107, 0); }
+    }
+
     .pipeline-arrow{
       text-align:center;
       color:#6f6f6f;
@@ -298,6 +330,21 @@
     .severity-value.high{color:#ff922b}
     .severity-value.critical{color:#ff6b6b}
     .severity-value.pending{color:#8f8f8f}
+
+    .confidence-block .k{
+      margin-bottom:4px;
+    }
+
+    .confidence-value{
+      font-size:1.05rem;
+      font-weight:800;
+      letter-spacing:0.4px;
+    }
+
+    .confidence-value.high{color:#51cf66}
+    .confidence-value.medium{color:#ffd43b}
+    .confidence-value.low{color:#ff922b}
+    .confidence-value.muted{color:#8f8f8f}
 
     .analysis-block{
       border:1px solid var(--border);
@@ -568,6 +615,11 @@
             <div class="severity-value pending" id="riskSeverity">—</div>
           </div>
 
+          <div class="analysis-block confidence-block">
+            <div class="k">DECISION CONFIDENCE</div>
+            <div class="confidence-value muted" id="decisionConfidence">—</div>
+          </div>
+
           <div class="analysis-block">
             <div class="k">Detected Risk Signals</div>
             <ul id="riskSignals">
@@ -692,10 +744,11 @@
       }
     }
 
-    function setPipelineState(step, className, label){
+    function setPipelineState(step, className, label, extraClasses = []){
       const el = document.getElementById(`step-${step}`);
       if (!el) return;
-      el.className = `pipeline-step ${className}`;
+      const extras = Array.isArray(extraClasses) ? extraClasses.filter(Boolean).join(" ") : "";
+      el.className = `pipeline-step ${className} ${extras}`.trim();
       el.querySelector(".state").textContent = label;
     }
 
@@ -703,31 +756,41 @@
       setPipelineState(step, "active", "IN PROGRESS");
     }
 
-    function finalizeStep(step, decision){
+    function finalizeStep(step, decision, severityClass){
       const d = (decision || "ALLOW").toLowerCase();
-      setPipelineState(step, d, (decision || "ALLOW").toUpperCase());
+      setPipelineState(step, d, (decision || "ALLOW").toUpperCase(), [severityClass]);
     }
 
-    async function runPipelineState(decision){
+    function severityClassForPipeline(severity){
+      const s = String(severity || "").toUpperCase();
+      if (s === "LOW") return "sev-low";
+      if (s === "MODERATE") return "sev-moderate";
+      if (s === "HIGH") return "sev-high";
+      if (s === "CRITICAL") return "sev-critical";
+      return "";
+    }
+
+    async function runPipelineState(decision, severity){
+      const severityClass = severityClassForPipeline(severity);
       setPipelinePending();
       activateStep(1);
       await new Promise((resolve)=>setTimeout(resolve,110));
       setPipelineState(1, "active", "COMPLETED");
       activateStep(2);
       await new Promise((resolve)=>setTimeout(resolve,110));
-      setPipelineState(2, "active", "COMPLETED");
+      setPipelineState(2, "active", "COMPLETED", [severityClass]);
       activateStep(3);
       await new Promise((resolve)=>setTimeout(resolve,110));
       setPipelineState(3, "active", "COMPLETED");
-      finalizeStep(4, decision);
+      finalizeStep(4, decision, severityClass);
       await new Promise((resolve)=>setTimeout(resolve,120));
       const d = String(decision || "ALLOW").toUpperCase();
       if (d === "ALLOW"){
-        setPipelineState(5, "allow", "BYPASSED");
+        setPipelineState(5, "allow", "BYPASSED", [severityClass]);
       } else if (d === "GUIDE"){
-        setPipelineState(5, "guide", "APPLIED");
+        setPipelineState(5, "guide", "APPLIED", [severityClass]);
       } else {
-        setPipelineState(5, "block", "APPLIED");
+        setPipelineState(5, "block", "APPLIED", [severityClass]);
       }
       await new Promise((resolve)=>setTimeout(resolve,110));
       setPipelineState(6, "active", "STORED");
@@ -752,6 +815,23 @@
       else if (s === "HIGH") el.className = "severity-value high";
       else if (s === "CRITICAL") el.className = "severity-value critical";
       else el.className = "severity-value pending";
+    }
+
+    function setDecisionConfidence(decision, confidenceFinal){
+      const el = document.getElementById("decisionConfidence");
+      const d = String(decision || "").toUpperCase();
+      if (d === "ALLOW"){
+        el.textContent = "—";
+        el.className = "confidence-value muted";
+        return;
+      }
+      const raw = d === "BLOCK" ? 99 : Math.round(Number(confidenceFinal || 0) * 100);
+      const value = Math.max(0, Math.min(100, raw));
+      el.textContent = `${value}%`;
+      if (value >= 90) el.className = "confidence-value high";
+      else if (value >= 70) el.className = "confidence-value medium";
+      else if (value >= 50) el.className = "confidence-value low";
+      else el.className = "confidence-value muted";
     }
 
     function decisionColorClass(decision){
@@ -856,12 +936,13 @@
           ? "Output intercepted. Human oversight required."
           : (data.repaired_text || "(No policy-constrained output returned)");
 
-        await runPipelineState(decision);
+        await runPipelineState(decision, severity);
 
         renderList("riskSignals", riskSignals);
         renderList("policyList", triggeredPolicies);
         renderList("interventionList", interventions);
         setRiskSeverity(severity);
+        setDecisionConfidence(decision, data.confidence_final);
 
         const decisionEl = document.getElementById("decisionValue");
         decisionEl.textContent = decision;
@@ -883,6 +964,7 @@
       } catch (error){
         setPipelinePending();
         setRiskSeverity("—");
+        setDecisionConfidence("ALLOW", null);
         document.getElementById("oversightPath").style.display = "none";
         renderList("interventionList", INTERVENTION_MAP.ALLOW);
         document.getElementById("governedOutput").textContent = `Governance engine unavailable: ${error.message}`;
