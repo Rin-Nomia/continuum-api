@@ -216,7 +216,7 @@
 
     .interaction-workspace{
       display:grid;
-      grid-template-columns:1fr 2fr 1fr;
+      grid-template-columns:1fr 2.8fr 0.8fr;
       gap:12px;
       align-items:start;
     }
@@ -282,6 +282,23 @@
       gap:10px;
     }
 
+    .severity-block .k{
+      margin-bottom:4px;
+    }
+
+    .severity-value{
+      font-size:1.05rem;
+      font-weight:800;
+      letter-spacing:0.4px;
+      text-transform:uppercase;
+    }
+
+    .severity-value.low{color:#8f8f8f}
+    .severity-value.moderate{color:#ffd43b}
+    .severity-value.high{color:#ff922b}
+    .severity-value.critical{color:#ff6b6b}
+    .severity-value.pending{color:#8f8f8f}
+
     .analysis-block{
       border:1px solid var(--border);
       border-radius:8px;
@@ -327,6 +344,60 @@
       margin-top:8px;
       color:#dedede;
       font-size:0.93rem;
+    }
+
+    .objective-k{
+      margin-top:10px;
+      color:#cfcfcf;
+      font-size:0.78rem;
+      letter-spacing:0.5px;
+      text-transform:uppercase;
+      font-weight:700;
+    }
+
+    .intervention-k{
+      margin-top:10px;
+      color:#cfcfcf;
+      font-size:0.78rem;
+      letter-spacing:0.5px;
+      text-transform:uppercase;
+      font-weight:700;
+    }
+
+    #interventionList{
+      margin-top:6px;
+      margin-left:18px;
+      font-size:0.88rem;
+    }
+
+    .oversight-path{
+      margin-top:10px;
+      border:1px solid #ff6b6b;
+      background:#2d1515;
+      border-radius:8px;
+      padding:10px;
+      display:none;
+    }
+
+    .oversight-path .title{
+      color:#ffb3b3;
+      font-size:0.78rem;
+      letter-spacing:0.5px;
+      text-transform:uppercase;
+      font-weight:800;
+    }
+
+    .oversight-path .headline{
+      margin-top:4px;
+      color:#ff6b6b;
+      font-weight:800;
+      font-size:0.92rem;
+    }
+
+    .oversight-path .detail{
+      margin-top:4px;
+      color:#ffdede;
+      font-size:0.84rem;
     }
 
     .output-box{
@@ -492,6 +563,11 @@
       <div class="panel">
         <h3>Governance Analysis</h3>
         <div class="analysis-grid">
+          <div class="analysis-block severity-block">
+            <div class="k">RISK SEVERITY</div>
+            <div class="severity-value pending" id="riskSeverity">—</div>
+          </div>
+
           <div class="analysis-block">
             <div class="k">Detected Risk Signals</div>
             <ul id="riskSignals">
@@ -509,15 +585,25 @@
           <div class="decision-box">
             <div class="k">Governance Decision</div>
             <div class="decision-value allow" id="decisionValue">ALLOW</div>
-            <div class="objective" id="interventionObjective">Interaction approved. No intervention required.</div>
+            <div class="objective-k">Governance Objective</div>
+            <div class="objective" id="interventionObjective">No intervention required. Interaction approved for standard processing.</div>
+            <div class="intervention-k">Intervention Applied</div>
+            <ul id="interventionList">
+              <li>No intervention applied.</li>
+            </ul>
           </div>
         </div>
       </div>
 
       <div class="panel">
-        <h3>Governed Response</h3>
+        <h3>Governed Output Preview</h3>
         <div class="output-box" id="governedOutput">(Awaiting analysis)</div>
         <span class="small-label">Policy-Constrained Output</span>
+        <div class="oversight-path" id="oversightPath">
+          <div class="title">Human Oversight Required</div>
+          <div class="headline">Escalated to Human Oversight</div>
+          <div class="detail">This interaction has been flagged for immediate human review.</div>
+        </div>
 
         <div class="baseline">
           <div class="k">Simulated Unconstrained Behavior</div>
@@ -583,9 +669,15 @@
     };
 
     const OBJECTIVE_MAP = {
-      ALLOW: "Interaction approved. No intervention required.",
+      ALLOW: "No intervention required. Interaction approved for standard processing.",
       GUIDE: "Preserve user agency while reducing escalation risk.",
-      BLOCK: "Prevent unsafe output. Escalate to human oversight."
+      BLOCK: "Prevent unsafe output. Escalate to human oversight immediately."
+    };
+
+    const INTERVENTION_MAP = {
+      GUIDE: ["Response Constraint", "Tone Limitation", "Escalation Prevention"],
+      BLOCK: ["Output Suppression", "Crisis Routing", "Human Escalation Triggered"],
+      ALLOW: ["No intervention applied."]
     };
 
     function useSample(label){
@@ -641,12 +733,25 @@
       setPipelineState(6, "active", "STORED");
     }
 
-    function severityFromConfidence(conf){
+    function severityFromConfidence(conf, decision){
+      const d = String(decision || "").toUpperCase();
+      if (d === "BLOCK") return "CRITICAL";
       const c = Number(conf || 0);
       if (c < 0.4) return "LOW";
       if (c < 0.6) return "MODERATE";
       if (c < 0.8) return "HIGH";
       return "CRITICAL";
+    }
+
+    function setRiskSeverity(severity){
+      const el = document.getElementById("riskSeverity");
+      const s = String(severity || "—").toUpperCase();
+      el.textContent = s;
+      if (s === "LOW") el.className = "severity-value low";
+      else if (s === "MODERATE") el.className = "severity-value moderate";
+      else if (s === "HIGH") el.className = "severity-value high";
+      else if (s === "CRITICAL") el.className = "severity-value critical";
+      else el.className = "severity-value pending";
     }
 
     function decisionColorClass(decision){
@@ -676,6 +781,10 @@
 
     function policyForDecision(decision){
       return POLICY_MAP[decision] || POLICY_MAP.ALLOW;
+    }
+
+    function interventionForDecision(decision){
+      return INTERVENTION_MAP[decision] || INTERVENTION_MAP.ALLOW;
     }
 
     function toDecision(data){
@@ -740,7 +849,9 @@
         const freq = String(data.freq_type || "Unknown");
         const riskSignals = riskSignalsForFreq(freq);
         const triggeredPolicies = policyForDecision(decision);
+        const interventions = interventionForDecision(decision);
         const objective = OBJECTIVE_MAP[decision] || OBJECTIVE_MAP.ALLOW;
+        const severity = severityFromConfidence(data.confidence_final, decision);
         const governed = decision === "BLOCK"
           ? "Output intercepted. Human oversight required."
           : (data.repaired_text || "(No policy-constrained output returned)");
@@ -749,17 +860,20 @@
 
         renderList("riskSignals", riskSignals);
         renderList("policyList", triggeredPolicies);
+        renderList("interventionList", interventions);
+        setRiskSeverity(severity);
 
         const decisionEl = document.getElementById("decisionValue");
         decisionEl.textContent = decision;
         decisionEl.className = `decision-value ${decisionColorClass(decision)}`;
         document.getElementById("interventionObjective").textContent = objective;
+        document.getElementById("oversightPath").style.display = decision === "BLOCK" ? "block" : "none";
 
         document.getElementById("governedOutput").textContent = governed;
         document.getElementById("baselineOutput").textContent = baselineSimulation(freq);
 
         document.getElementById("evDecisionId").textContent = buildDecisionId();
-        document.getElementById("evSeverity").textContent = severityFromConfidence(data.confidence_final);
+        document.getElementById("evSeverity").textContent = severity;
         document.getElementById("evAction").textContent = decision;
         document.getElementById("evCategory").textContent = RISK_CATEGORY_MAP[freq] || RISK_CATEGORY_MAP.Unknown;
         document.getElementById("evPolicy").textContent = triggeredPolicies.join(", ");
@@ -768,6 +882,9 @@
         document.getElementById("evStored").textContent = "YES";
       } catch (error){
         setPipelinePending();
+        setRiskSeverity("—");
+        document.getElementById("oversightPath").style.display = "none";
+        renderList("interventionList", INTERVENTION_MAP.ALLOW);
         document.getElementById("governedOutput").textContent = `Governance engine unavailable: ${error.message}`;
       } finally{
         btn.disabled = false;
