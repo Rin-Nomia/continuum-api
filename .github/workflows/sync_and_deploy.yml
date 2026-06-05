@@ -112,8 +112,13 @@ jobs:
 
           try:
               api.space_info(repo_id)
-          except Exception:
-              api.create_repo(repo_id=repo_id, repo_type="space", space_sdk="docker")
+          except Exception as e:
+              if "429" in str(e) or "Too Many Requests" in str(e):
+                  print("Rate limited by HuggingFace. Waiting 60 seconds...")
+                  time.sleep(60)
+                  api.space_info(repo_id)
+              else:
+                  api.create_repo(repo_id=repo_id, repo_type="space", space_sdk="docker")
 
           print("分批上傳 dist 內容...")
 
