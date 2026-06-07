@@ -63,6 +63,19 @@
       font-size:0.85rem;
     }
 
+    .hero-tagline{
+      margin-top:10px;
+      color:#a8a8a8;
+      font-size:0.88rem;
+      line-height:1.6;
+      max-width:520px;
+    }
+
+    .hero-tagline br{
+      display:block;
+      content:"";
+    }
+
     .status-grid{
       display:grid;
       grid-template-columns:repeat(3,minmax(160px,1fr));
@@ -461,12 +474,16 @@
       line-height:1;
     }
 
+    /* ── outcomeBox 移出後獨立樣式 ── */
     .outcome-box{
-      margin-top:10px;
       border:1px solid #2b2b2b;
       background:#0d1117;
       border-radius:8px;
       padding:10px;
+    }
+
+    .outcome-box.block-mode{
+      border-color:#ff6b6b;
     }
 
     .outcome-k{
@@ -648,6 +665,7 @@
       <div class="brand">
         <h1>Continuum</h1>
         <span class="tag">AI Decision Governance Infrastructure</span>
+        <p class="hero-tagline">The most expensive AI failures don't look like failures.<br>A user leaves. A complaint appears. A human agent steps in.<br>Continuum intervenes before any of them happen.</p>
       </div>
       <div class="status-grid">
         <div class="status-card">
@@ -721,16 +739,26 @@
       <div class="panel">
         <h3>Governance Analysis</h3>
         <div class="analysis-grid">
+
+          <!-- ★ 移到最上方：Governance Outcome Summary -->
+          <div class="outcome-box" id="outcomeBox">
+            <div class="outcome-k">WHAT CONTINUUM PREVENTED</div>
+            <div id="outcomeContent"></div>
+          </div>
+
+          <!-- 2. Risk Severity -->
           <div class="analysis-block severity-block">
             <div class="k">RISK SEVERITY</div>
             <div class="severity-value pending" id="riskSeverity">—</div>
           </div>
 
+          <!-- 3. Decision Confidence -->
           <div class="analysis-block confidence-block">
             <div class="k">DECISION CONFIDENCE</div>
             <div class="confidence-value muted" id="decisionConfidence">—</div>
           </div>
 
+          <!-- 4. Detected Risk Signals -->
           <div class="analysis-block">
             <div class="k">Detected Risk Signals</div>
             <ul id="riskSignals">
@@ -738,6 +766,7 @@
             </ul>
           </div>
 
+          <!-- 5. Triggered Policies -->
           <div class="analysis-block">
             <div class="k">Triggered Policies</div>
             <ul id="policyList">
@@ -745,6 +774,7 @@
             </ul>
           </div>
 
+          <!-- 6. Governance Decision（causality box 留在這裡）-->
           <div class="decision-box">
             <div class="k">Governance Decision</div>
             <div class="decision-value allow" id="decisionValue">ALLOW</div>
@@ -758,11 +788,8 @@
               <div class="causality-k">GOVERNANCE REASONING</div>
               <div class="causality-chain" id="causalityChain"></div>
             </div>
-            <div class="outcome-box" id="outcomeBox">
-              <div class="outcome-k">GOVERNANCE OUTCOME SUMMARY</div>
-              <div id="outcomeContent"></div>
-            </div>
           </div>
+
         </div>
       </div>
 
@@ -1072,20 +1099,90 @@
       box.classList.toggle("block-mode", d === "BLOCK");
     }
 
-    function outcomeGuideReason(freq){
-      const f = String(freq || "Unknown");
-      const map = {
-        Sharp: "This interaction contained escalation pressure and directive language.",
-        Pushy: "This interaction contained coercive pressure and public escalation threats.",
-        Anxious: "This interaction contained emotional volatility and dependency-risk signals.",
-        Cold: "This interaction contained disengagement and dismissive interaction patterns.",
-        Blur: "This interaction contained ambiguous intent and unclear instruction signals."
-      };
-      return map[f] || "This interaction contained elevated governance risk signals.";
-    }
+    const CONSEQUENCE_MAP = {
+      Sharp: {
+        label: "Escalation Pressure Detected",
+        without: [
+          "The conversation may escalate into conflict",
+          "The user may leave without resolution",
+          "A human agent may need to step in later"
+        ],
+        with: [
+          "Escalation pressure contained",
+          "Conversation remains recoverable",
+          "Human intervention avoided"
+        ]
+      },
+      Pushy: {
+        label: "Coercive Pressure Detected",
+        without: [
+          "The AI may over-comply with coercive pressure",
+          "Policy boundaries may be violated",
+          "The interaction may create compliance risk"
+        ],
+        with: [
+          "Coercive pressure detected and limited",
+          "Policy boundaries enforced",
+          "Compliance risk reduced"
+        ]
+      },
+      Anxious: {
+        label: "Emotional Volatility Detected",
+        without: [
+          "The AI may reinforce dependency through over-reassurance",
+          "Emotional volatility may increase over the interaction",
+          "Support load may escalate without a recovery path"
+        ],
+        with: [
+          "Emotional volatility detected early",
+          "Response stabilized to reduce dependency risk",
+          "Interaction guided toward resolution"
+        ]
+      },
+      Cold: {
+        label: "Disengagement Risk Detected",
+        without: [
+          "The user may quietly disengage",
+          "No recovery signal is triggered",
+          "The conversation ends without resolution"
+        ],
+        with: [
+          "Disengagement risk detected",
+          "Re-engagement opportunity preserved",
+          "Audit evidence recorded"
+        ]
+      },
+      Blur: {
+        label: "Ambiguous Intent Detected",
+        without: [
+          "The AI may act on the wrong interpretation",
+          "The request may be resolved incorrectly",
+          "Additional support effort may be required"
+        ],
+        with: [
+          "Ambiguity detected before action",
+          "Clarification encouraged",
+          "Misresolution risk reduced"
+        ]
+      },
+      Unknown: {
+        label: "Risk Signal Detected",
+        without: [
+          "The interaction may proceed without governance oversight",
+          "Risk signals may go undetected",
+          "No intervention record would exist"
+        ],
+        with: [
+          "Interaction assessed for risk signals",
+          "Governance policy applied",
+          "Audit evidence recorded"
+        ]
+      }
+    };
 
     function renderOutcomeSummary(decision, freq){
       const d = String(decision || "ALLOW").toUpperCase();
+      const f = String(freq || "Unknown");
       const box = document.getElementById("outcomeBox");
       const content = document.getElementById("outcomeContent");
       box.classList.toggle("block-mode", d === "BLOCK");
@@ -1102,14 +1199,12 @@
 
       if (d === "BLOCK"){
         content.innerHTML = `
-          <div class="outcome-title">Why did Continuum intervene?</div>
-          <div class="outcome-reason">This interaction contained a critical safety signal.</div>
+          <div class="outcome-title">Without Continuum:</div>
           <div class="outcome-section">
-            <div class="outcome-section-title">Without governance:</div>
             <ul class="outcome-list">
               <li class="without-item">The AI continues responding in an unsafe context</li>
-              <li class="without-item">Crisis may escalate without human awareness</li>
-              <li class="without-item">No safety record exists</li>
+              <li class="without-item">A crisis may escalate without any human awareness</li>
+              <li class="without-item">No safety record would exist</li>
             </ul>
           </div>
           <div class="outcome-section">
@@ -1124,24 +1219,19 @@
         return;
       }
 
+      const c = CONSEQUENCE_MAP[f] || CONSEQUENCE_MAP.Unknown;
+      const withoutItems = c.without.map(t => `<li class="without-item">${t}</li>`).join("");
+      const withItems = c.with.map(t => `<li class="with-item">${t}</li>`).join("");
+
       content.innerHTML = `
-        <div class="outcome-title">Why did Continuum intervene?</div>
-        <div class="outcome-reason">${outcomeGuideReason(freq)}</div>
+        <div class="outcome-title">${c.label}</div>
         <div class="outcome-section">
-          <div class="outcome-section-title">Without governance:</div>
-          <ul class="outcome-list">
-            <li class="without-item">The AI may reinforce confrontation</li>
-            <li class="without-item">Escalation risk increases without intervention</li>
-            <li class="without-item">No intervention record exists</li>
-          </ul>
+          <div class="outcome-section-title">Without Continuum:</div>
+          <ul class="outcome-list">${withoutItems}</ul>
         </div>
         <div class="outcome-section">
           <div class="outcome-section-title">With Continuum:</div>
-          <ul class="outcome-list">
-            <li class="with-item">Response scope constrained</li>
-            <li class="with-item">Escalation risk reduced</li>
-            <li class="with-item">Audit evidence created</li>
-          </ul>
+          <ul class="outcome-list">${withItems}</ul>
         </div>
       `;
     }
@@ -1158,19 +1248,19 @@
     function baselineSimulation(freq){
       switch(freq){
         case "Sharp":
-          return "Ungoverned output may mirror directive pressure and escalate confrontation.";
+          return "Without governance, the AI may amplify confrontation, making the interaction harder to recover.";
         case "Anxious":
-          return "Ungoverned output may reinforce dependency through over-reassurance.";
+          return "Without governance, the AI may over-reassure, deepening dependency and prolonging the interaction without resolution.";
         case "Cold":
-          return "Ungoverned output may miss disengagement cues and fail to recover interaction.";
+          return "Without governance, the user may quietly disengage, and the system may never detect the loss.";
         case "Blur":
-          return "Ungoverned output may proceed without clarifying ambiguous intent.";
+          return "Without governance, the AI may act on the wrong interpretation and resolve the request incorrectly.";
         case "Pushy":
-          return "Ungoverned output may over-comply with coercive pressure.";
+          return "Without governance, the AI may over-comply with pressure, crossing policy boundaries without any record.";
         case "OutOfScope":
-          return "Ungoverned output may continue in unsafe contexts without escalation.";
+          return "Without governance, the AI may continue responding in an unsafe context, with no escalation and no record.";
         default:
-          return "Ungoverned output may proceed without explicit policy enforcement trace.";
+          return "Without governance, this interaction would proceed without oversight, intervention, or audit trail.";
       }
     }
 
