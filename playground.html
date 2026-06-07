@@ -311,6 +311,14 @@
       gap:6px;
     }
 
+    .samples-label{
+      color:#6a6a6a;
+      font-size:0.74rem;
+      letter-spacing:0.4px;
+      text-transform:uppercase;
+      margin-bottom:2px;
+    }
+
     .sample{
       border:1px solid var(--border);
       border-radius:7px;
@@ -320,6 +328,21 @@
       cursor:pointer;
       font-size:0.82rem;
       text-align:left;
+      display:flex;
+      flex-direction:column;
+      gap:3px;
+    }
+
+    .sample-type{
+      font-weight:600;
+      color:#d8d8d8;
+      font-size:0.82rem;
+    }
+
+    .sample-preview{
+      color:#6a6a6a;
+      font-size:0.76rem;
+      line-height:1.3;
     }
 
     .analysis-grid{
@@ -729,10 +752,11 @@
         <textarea id="inputText" placeholder="Enter high-risk interaction content for governance analysis..."></textarea>
         <button class="btn" id="runBtn" onclick="runAnalysis()">Run Analysis</button>
         <div class="quick-samples">
-          <button class="sample" type="button" onclick="useSample('Escalation Pressure')">Escalation Pressure</button>
-          <button class="sample" type="button" onclick="useSample('Directive Tone')">Directive Tone</button>
-          <button class="sample" type="button" onclick="useSample('Dismissive')">Dismissive</button>
-          <button class="sample" type="button" onclick="useSample('Ambiguous')">Ambiguous</button>
+          <div class="samples-label">Try a real interaction failure pattern</div>
+          <button class="sample" type="button" onclick="useSample('Escalation Pressure')"><span class="sample-type">⚠️ Customer Escalation</span><span class="sample-preview">"I've waited three days. Fix this now or I'm filing a complaint."</span></button>
+          <button class="sample" type="button" onclick="useSample('Directive Tone')"><span class="sample-type">😤 Directive Pressure</span><span class="sample-preview">"Stop asking questions and do exactly what I told you."</span></button>
+          <button class="sample" type="button" onclick="useSample('Dismissive')"><span class="sample-type">🧊 Silent Disengagement</span><span class="sample-preview">"Whatever. This is pointless. I don't care anymore."</span></button>
+          <button class="sample" type="button" onclick="useSample('Ambiguous')"><span class="sample-type">❓ Ambiguous Complaint</span><span class="sample-preview">"Something feels off but I can't explain what exactly."</span></button>
         </div>
       </div>
 
