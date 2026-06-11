@@ -3,6 +3,17 @@
 
 ---
 
+## Scope Definition
+
+Continuum governs Authorization Boundary failures:
+Cases where AI exercised permissions it was not authorized to have.
+
+Continuum does NOT govern Content Safety failures:
+Cases where AI said something unsafe within its authorized role.
+These belong to model alignment teams.
+
+---
+
 ## Why This Matters
 
 These are not hypothetical scenarios.
@@ -223,6 +234,62 @@ Decision and handoff record stored
 
 ---
 
+## Case #008: Chevrolet Watsonville — Unauthorized Contract Commitment
+**Year:** 2023
+**Who was hurt:** Dealership and technology vendor
+**Loss:** PR crisis, system taken offline, legal review of contract validity
+
+**What happened:**
+A dealership chatbot at Chevrolet Watsonville was manipulated by prompt injection and confirmed a legally binding vehicle sale at USD1. The interaction spread publicly, triggered reputational fallout, and forced emergency shutdown of the AI system pending legal review.
+
+**Where the system failed:**
+Prompt injection caused the AI to cross an authorization boundary and issue a contractual commitment it was not permitted to make.
+
+**Continuum intervention:**
+```
+AI response includes contract-confirmation language at unauthorized price
+↓
+Unauthorized Contract Commitment detected
+↓
+Governance Decision: BLOCK
+↓
+Binding language suppressed before user delivery
+Escalation routed to authorized sales/legal workflow
+↓
+Audit evidence preserved
+```
+
+**Core value:** Enforcement — unauthorized contractual commitments are blocked before they can become binding exposure.
+
+---
+
+## Case #009: Character.AI (Sewall v. Character.AI) — Out of Scope
+**Year:** 2024
+**Classification:** NOT an Authorization Boundary failure
+**Who was hurt:** User safety stakeholders, trust and safety teams
+**Loss:** Severe safety harm allegations, legal and reputational exposure
+
+**What happened:**
+The Sewall v. Character.AI case raised allegations tied to unsafe conversational content and harm outcomes. The core issue was model safety behavior within the assistant's speaking role, not an unauthorized legal, financial, or operational commitment boundary.
+
+**Where the system failed:**
+This is a Content Safety failure — outside Continuum's governance scope. The required controls belong to model alignment, safety policy design, and platform trust-and-safety operations.
+
+**Continuum intervention:**
+```
+Scope check
+↓
+Classified as Content Safety domain
+↓
+Boundary Governance Decision: Out of Scope
+↓
+Escalate to Safety Alignment and Trust & Safety controls
+```
+
+**Core value:** Scope integrity — boundary enforcement infrastructure is not a substitute for content safety alignment systems.
+
+---
+
 ## The Pattern
 
 | Case | Who Was Hurt | System Failure | Continuum Decision | Core Value |
@@ -234,6 +301,8 @@ Decision and handoff record stored
 | Project X | CEO, Board, Legal | AI generated unauthorized hostile strategy | BLOCK | Governance |
 | EchoLeak | VP Engineering, CISO | Prompt injection drove remote-code execution | BLOCK → REPAIR | Enforcement |
 | B2B Invoice | Procurement, CFO | Unauthorized financial commitment via ERP | GUIDE → Handoff | Accountability |
+| Chevrolet Watsonville | Dealership, Vendor | Prompt injection confirmed unauthorized USD1 contract sale | BLOCK | Enforcement |
+| Character.AI (Sewall) | Safety, Trust teams | Content safety harm (not authorization boundary) | Out of Scope | Scope Integrity |
 
 ---
 
