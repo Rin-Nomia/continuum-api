@@ -1,9 +1,12 @@
-# Buyer Map v1
-## Who bears accountability when AI systems fail
+# Accountability Map v1
+## Who bears responsibility when AI systems fail
 
 Based on 30-case AI Failure Archive.
-This map identifies who gets called into the meeting room after an incident —
-not who builds the system, but who is responsible for its consequences.
+This map identifies who gets called into the meeting room after an AI incident.
+Not who built the system — but who must explain its behavior to the board, regulators, customers, or courts.
+
+Note: Accountability ≠ Budget authority. This map tracks responsibility, not purchasing power.
+Buyer Map v2 will address budget and contract authority separately.
 
 ---
 
@@ -69,6 +72,10 @@ These are research set observations only, not general industry statistics.
 | CMO / Marketing Director | 4 | Revenue — must explain brand and campaign failures |
 | CHRO / HR Director | 3 | Regulatory — must explain compliance violations |
 
+**Important caveat:** Frequency of appearance in this research set does not indicate these roles are your customers.
+A role that appears often may simply be the last person to clean up the incident.
+Accountability and purchasing authority are different things.
+
 ---
 
 ## Three Accountability Groups
@@ -90,26 +97,20 @@ Most common question they face: "Why did AI have access it shouldn't have had?"
 
 ---
 
-## Key Observation
+## What This Map Establishes
 
 Across 30 cases, the person held accountable is rarely the person who built the system.
 
 The accountable person is the Risk Owner —
 the one who must explain AI behavior to the board, regulators, customers, or courts.
 
-This suggests Continuum's conversation should not start with:
-"We have a governance layer."
-
+This suggests Continuum's conversation should not start with technical capabilities.
 It should start with:
 "When your AI acts outside its authorized scope —
 who in your organization has to explain why?"
 
----
-
-## Next Step: Buyer Map v2
-Identify which Risk Owner group has:
-- Budget authority
-- Active pain (incident already occurred or feared)
-- Shortest path to a conversation
+## Next Step: Accountability Map v2
+Map budget authority and contract signing power alongside accountability.
+Identify where accountability and budget overlap — that intersection is the Buyer.
 
 Source: AI Failure Archive (docs/CASE_MATRIX_V1.md)
