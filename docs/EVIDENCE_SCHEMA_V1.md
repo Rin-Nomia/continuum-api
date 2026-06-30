@@ -1,135 +1,121 @@
-# EVIDENCE_SCHEMA_V1 Technical Specification
+# EVIDENCE_SCHEMA_V1 and API Governance Contract
 
 Version: `1.0`  
-Source of truth: `continuum-api/app.py -> EVIDENCE_SCHEMA_V1` and `build_evidence_v1()`
+Source of truth: `continuum-api-repo/app.py`
 
 ---
 
-## 1. Purpose
+## 1) Purpose
 
-This schema defines the **content-free audit evidence payload** written by Continuum.
+This document defines:
 
-Design goals:
-- reproducible
-- auditable
-- privacy-safe (de-identified)
+1. The external `/api/v1/analyze` response contract for business/legal readability.
+2. The content-free evidence schema written by logger (`build_evidence_v1`).
 
----
-
-## 2. De-identification rules (MUST)
-
-### 2.1 Raw text persistence prohibition
-
-The logger payload MUST NOT persist:
-- user raw input text
-- original normalized text
-- repaired/generated text as raw body
-
-### 2.2 Fingerprint strategy
-
-Raw content is represented only by:
-- `input_fp_sha256`
-- `output_fp_sha256`
-- `input_length`
-- `output_length`
-
-### 2.3 Content-derived scrub
-
-Before persistence, metrics/audit are scrubbed to remove content-derived keys, including (not limited to):
-- matched/matches/keyword(s)/trigger(s)
-- detected_keywords
-- oos_matched
-- prompt/messages/completion/response_text
-- text/input_text/original/normalized/repaired_text
-- raw_ai_output/llm_raw_response/llm_raw_output
+Key addition in A-P0-2:
+- `governance_mode` (`Sense`/`Guide`/`Block`)
+- `intervention_reason_code` (why the system intervened)
 
 ---
 
-## 3. Required top-level keys
+## 2) Analyze API response fields (external contract)
 
-All keys below are required by schema contract:
-
-1. `schema_version` (string)
-2. `input_fp_sha256` (string, sha256 hex)
-3. `input_length` (integer)
-4. `output_fp_sha256` (string, sha256 hex)
-5. `output_length` (integer)
-6. `freq_type` (string)
-7. `mode` (string)
-8. `scenario` (string)
-9. `confidence` (object)
-10. `metrics` (object, content-scrubbed)
-11. `audit` (object, content-scrubbed)
-12. `llm_used` (boolean or null)
-13. `cache_hit` (boolean or null)
-14. `model` (string)
-15. `usage` (object)
-16. `output_source` (string or null)
-17. `api_version` (string)
-18. `pipeline_version_fingerprint` (string)
+| Field | Type | Description | Example |
+|---|---|---|---|
+| decision_state | string (`ALLOW`/`GUIDE`/`BLOCK`) | Internal governance decision state | `GUIDE` |
+| governance_mode | string (`Sense`/`Guide`/`Block`) | External-readable mode mapped from `decision_state` | `Guide` |
+| intervention_reason_code | string or null | Specific intervention trigger reason. `null` when no intervention | `unauthorized_refund_commitment` |
+| freq_type | string | Risk/tone category label | `CommitmentRisk` |
+| confidence_final | float | Final confidence in [0,1] | `1.0` |
+| confidence_classifier | float or null | Classifier confidence in [0,1] | `1.0` |
+| scenario | string | Scenario routing label | `authority_boundary_commitment` |
+| repaired_text | string or null | Governed output text (or empty on hard block) | `此請求可能涉及超出權限的承諾，請依官方政策與授權流程處理。` |
+| repair_note | string or null | Human-readable note for intervention | `Commitment boundary triggered: unauthorized_refund_commitment` |
+| privacy_guard_ok | boolean | Privacy guard status | `true` |
+| llm_used | boolean or null | Whether LLM was used | `false` |
+| cache_hit | boolean or null | Whether cache was hit | `false` |
+| model | string | Model name if any | `""` |
+| usage | object | Token/runtime usage info | `{}` |
+| output_source | string or null | Output path source | `authority_boundary_check` |
+| audit | object | Content-free audit metadata | `{"input_hash":"...","timing_ms":{"total":1}}` |
+| metrics | object | Governance metrics summary | `{"reason_code":"unauthorized_refund_commitment","decision_state":"GUIDE"}` |
 
 ---
 
-## 4. Field type contract
+## 3) decision_state -> governance_mode mapping
 
-| Field | Type | Privacy note |
+| decision_state | governance_mode | Meaning |
 |---|---|---|
-| schema_version | string | version marker only |
-| input_fp_sha256 | string | de-identified fingerprint |
-| input_length | int | content length only |
-| output_fp_sha256 | string | de-identified fingerprint |
-| output_length | int | content length only |
-| freq_type | string | taxonomy label |
-| mode | string | internal execution mode |
-| scenario | string | scenario label |
-| confidence.final | float [0,1] | no raw content |
-| confidence.classifier | float [0,1] | no raw content |
-| metrics | object | scrubbed from content-derived keys |
-| audit | object | scrubbed from content-derived keys |
-| llm_used | bool or null | runtime indicator |
-| cache_hit | bool or null | runtime indicator |
-| model | string | model name only |
-| usage | object | token usage metadata |
-| output_source | string or null | output path marker |
-| api_version | string | release marker |
-| pipeline_version_fingerprint | string | config fingerprint |
+| `ALLOW` | `Sense` | Monitor-only, no direct intervention |
+| `GUIDE` | `Guide` | Soft intervention / constrained response |
+| `BLOCK` | `Block` | Hard interception / safe diversion |
 
 ---
 
-## 5. Confidence object contract
+## 4) intervention_reason_code catalog
 
-Required keys:
-- `confidence.final`
-- `confidence.classifier`
+When `decision_state = ALLOW`, `intervention_reason_code = null`.
 
-Both fields MUST be numeric and clamped into `[0.0, 1.0]`.
+### 4.1 commitment_guard (authority boundary)
+
+- `unauthorized_refund_commitment`
+- `unauthorized_discount_commitment`
+- `unauthorized_compensation_commitment`
+- `unauthorized_legal_guarantee`
+- `escalation_pressure`
+- `unauthorized_policy_override`
+- `unauthorized_contract_change`
+- `ambiguous_commitment_risk`
+- `pressure_induced_commitment`
+- `mandatory_human_handoff` (keyword-triggered handoff)
+
+### 4.2 safety_gate
+
+- `crisis_self_harm`
+
+### 4.3 tone classifier / tone routing
+
+- `TONE_ANXIOUS`
+- `TONE_SHARP`
+- `TONE_COLD`
+- `TONE_BLUR`
+- `TONE_PUSHY`
+- `TONE_RHYTHM`
+- `TONE_UNKNOWN`
 
 ---
 
-## 6. Validation behavior
+## 5) Evidence payload required keys (logger schema)
 
-`validate_evidence_v1()` checks:
-- required keys presence
-- confidence shape
-- key type sanity:
-  - `input_length` int
-  - `output_length` int
-  - `llm_used` bool|null
-  - `cache_hit` bool|null
-  - `usage` object
-  - `audit` object
-  - `metrics` object
+The logger evidence payload (`build_evidence_v1`) is content-free and requires:
 
-If validation fails:
-- runtime should not crash
-- payload is marked with:
+1. `schema_version`
+2. `input_fp_sha256`
+3. `input_length`
+4. `output_fp_sha256`
+5. `output_length`
+6. `freq_type`
+7. `mode`
+8. `scenario`
+9. `confidence`
+10. `metrics`
+11. `audit`
+12. `llm_used`
+13. `cache_hit`
+14. `model`
+15. `usage`
+16. `output_source`
+17. `governance_mode`
+18. `intervention_reason_code`
+19. `api_version`
+20. `pipeline_version_fingerprint`
+
+---
+
+## 6) Privacy and validation notes
+
+- No raw input/output text is persisted in evidence.
+- `metrics` and `audit` are scrubbed from content-derived keys before persistence.
+- If schema validation fails, runtime does not crash; evidence includes:
   - `schema_valid: false`
   - `schema_errors: [...]`
-
----
-
-## 7. Compliance statement
-
-This schema is contract-ready for external audit.  
-Any breaking change requires schema version increment and migration notice.
-

@@ -157,6 +157,51 @@ def _decision_from_mode(mode: str) -> str:
     return "GUIDE"
 
 
+def _governance_mode_from_decision_state(decision_state: str) -> Literal["Sense", "Guide", "Block"]:
+    ds = _safe_str(decision_state, "").strip().upper()
+    if ds == "BLOCK":
+        return "Block"
+    if ds == "GUIDE":
+        return "Guide"
+    return "Sense"
+
+
+def _intervention_reason_code_from_truth(
+    *,
+    decision_state: str,
+    metrics: Optional[Dict[str, Any]],
+    audit: Optional[Dict[str, Any]],
+) -> Optional[str]:
+    """
+    External-facing intervention reason code:
+    - ALLOW (Sense) -> None
+    - GUIDE/BLOCK -> strongest available trigger reason
+      priority: authority_boundary > safety_gate(oos_reason_code) > metrics.reason_code
+    """
+    ds = _safe_str(decision_state, "").strip().upper()
+    if ds == "ALLOW":
+        return None
+
+    a = audit if isinstance(audit, dict) else {}
+    m = metrics if isinstance(metrics, dict) else {}
+
+    authority_boundary = a.get("authority_boundary")
+    if isinstance(authority_boundary, dict):
+        rc = _safe_str(authority_boundary.get("reason_code"), "").strip()
+        if rc:
+            return rc
+
+    oos_reason = _safe_str(a.get("oos_reason_code"), "").strip()
+    if oos_reason:
+        return oos_reason
+
+    metric_reason = _safe_str(m.get("reason_code"), "").strip()
+    if metric_reason and metric_reason.upper() != "TONE_UNKNOWN":
+        return metric_reason
+
+    return "intervention_unknown"
+
+
 def _decision_state_from_truth(*, mode: str, freq_type: str, scenario: str) -> str:
     if _safe_str(freq_type, "") == "OutOfScope":
         return "BLOCK"
@@ -301,6 +346,8 @@ EVIDENCE_SCHEMA_V1 = {
         "model",
         "usage",
         "output_source",
+        "governance_mode",
+        "intervention_reason_code",
         "api_version",
         "pipeline_version_fingerprint",
     ],
@@ -339,6 +386,10 @@ def validate_evidence_v1(e: Dict[str, Any]) -> Tuple[bool, List[str]]:
         errors.append("type:audit_not_dict")
     if "metrics" in e and not isinstance(e.get("metrics"), dict):
         errors.append("type:metrics_not_dict")
+    if "governance_mode" in e and not isinstance(e.get("governance_mode"), str):
+        errors.append("type:governance_mode_not_str")
+    if "intervention_reason_code" in e and e.get("intervention_reason_code") is not None and not isinstance(e.get("intervention_reason_code"), str):
+        errors.append("type:intervention_reason_code_not_str_or_none")
 
     return (len(errors) == 0), errors
 
@@ -359,6 +410,8 @@ def build_evidence_v1(
     model_name: str,
     usage: Dict[str, Any],
     output_source: Optional[str],
+    governance_mode: str,
+    intervention_reason_code: Optional[str],
     pipeline_version_fingerprint: str,
 ) -> Dict[str, Any]:
     # fingerprints
@@ -399,6 +452,8 @@ def build_evidence_v1(
         "usage": usage if isinstance(usage, dict) else {},
 
         "output_source": output_source,
+        "governance_mode": _safe_str(governance_mode, "Sense"),
+        "intervention_reason_code": _none_if_empty(_safe_str(intervention_reason_code, "")),
 
         # versioning
         "api_version": APP_VERSION,
@@ -509,6 +564,8 @@ class AnalyzeRequest(BaseModel):
 
 class AnalyzeResponse(BaseModel):
     decision_state: Literal["ALLOW", "GUIDE", "BLOCK"]
+    governance_mode: Literal["Sense", "Guide", "Block"]
+    intervention_reason_code: Optional[str] = None
     freq_type: str
     confidence_final: float
     confidence_classifier: Optional[float] = None
@@ -784,6 +841,12 @@ async def analyze(req: AnalyzeRequest):
     metrics["decision_state"] = decision_state
     if "action" not in metrics:
         metrics["action"] = "intercept" if decision_state == "BLOCK" else ("pass" if decision_state == "ALLOW" else "constrain")
+    governance_mode = _governance_mode_from_decision_state(decision_state)
+    intervention_reason_code = _intervention_reason_code_from_truth(
+        decision_state=decision_state,
+        metrics=metrics,
+        audit=audit_top,
+    )
 
     # Fingerprint (truth)
     pipeline_fp = (
@@ -810,6 +873,8 @@ async def analyze(req: AnalyzeRequest):
                 model_name=model_name,
                 usage=usage,
                 output_source=output_source,
+                governance_mode=governance_mode,
+                intervention_reason_code=intervention_reason_code,
                 pipeline_version_fingerprint=pipeline_fp,
             )
 
@@ -841,6 +906,8 @@ async def analyze(req: AnalyzeRequest):
 
     return AnalyzeResponse(
         decision_state=decision_state,
+        governance_mode=governance_mode,
+        intervention_reason_code=intervention_reason_code,
         freq_type=freq_type,
         confidence_final=confidence_final,
         confidence_classifier=confidence_classifier,
