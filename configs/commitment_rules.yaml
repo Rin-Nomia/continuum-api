@@ -1,0 +1,174 @@
+version: "v1"
+enabled: true
+default_decision: "ALLOW"
+
+categories:
+  refund_commitment:
+    decision: "GUIDE"
+    reason_code: "unauthorized_refund_commitment"
+    patterns_zh:
+      - "我可以幫你退款"
+      - "保證退你"
+      - "一定退費"
+      - "全額退給你"
+      - "我幫你申請退款"
+      - "退款沒問題"
+      - "我這邊直接退"
+      - "可以無條件退"
+    patterns_en:
+      - "I can refund you"
+      - "guaranteed refund"
+      - "you will be refunded"
+      - "full refund"
+      - "I'll process the refund"
+      - "no problem, refund approved"
+
+  discount_commitment:
+    decision: "GUIDE"
+    reason_code: "unauthorized_discount_commitment"
+    patterns_zh:
+      - "給你打.折"
+      - "直接打折"
+      - "我幫你改成"
+      - "算你便宜"
+      - "我這邊給你優惠"
+      - "特別給你折扣"
+      - "幫你調降價格"
+    patterns_en:
+      - "I can give you .% off"
+      - "I will apply a discount"
+      - "special price for you"
+      - "I'll lower the price"
+      - "exclusive discount just for you"
+
+  compensation_commitment:
+    decision: "BLOCK"
+    reason_code: "unauthorized_compensation_commitment"
+    patterns_zh:
+      - "賠償你"
+      - "補償你"
+      - "我負責賠"
+      - "公司會賠"
+      - "這個我們全額賠償"
+      - "給你額外補償"
+      - "我這邊幫你爭取賠償"
+    patterns_en:
+      - "I will compensate you"
+      - "we will pay you compensation"
+      - "we'll cover the damages"
+      - "you'll be compensated in full"
+
+  legal_guarantee:
+    decision: "BLOCK"
+    reason_code: "unauthorized_legal_guarantee"
+    patterns_zh:
+      - "保證"
+      - "法律上我承諾"
+      - "可提告我會賠"
+      - "我用人格保證"
+      - "這是合法承諾"
+      - "白紙黑字保證"
+      - "我代表公司保證"
+    patterns_en:
+      - "I guarantee"
+      - "legally binding"
+      - "you can sue and we will pay"
+      - "this is a legal commitment"
+      - "I promise on behalf of the company"
+
+  escalation_threat:
+    decision: "GUIDE"
+    reason_code: "escalation_pressure"
+    patterns_zh:
+      - "我要去爆料"
+      - "我要投訴"
+      - "我要找媒體"
+      - "我要上社群公審"
+      - "我要去消基會"
+      - "再不處理我就截圖"
+      - "我要打去總公司"
+    patterns_en:
+      - "I will escalate publicly"
+      - "I will post this online"
+      - "I'll report this to the media"
+      - "going to consumer protection"
+      - "taking this to social media"
+
+  policy_override:
+    decision: "GUIDE"
+    reason_code: "unauthorized_policy_override"
+    patterns_zh:
+      - "幫你破例"
+      - "這次特別通融"
+      - "規定先不管"
+      - "我幫你跳過這個流程"
+      - "這個我可以幫你變通"
+    patterns_en:
+      - "I'll make an exception"
+      - "I can bypass the policy"
+      - "let's skip the procedure"
+      - "I'll bend the rules for you"
+
+  contract_modification:
+    decision: "BLOCK"
+    reason_code: "unauthorized_contract_change"
+    patterns_zh:
+      - "我幫你改合約"
+      - "重新簽約給你"
+      - "條款我幫你調整"
+      - "我這邊更新合約內容"
+    patterns_en:
+      - "I'll modify the contract"
+      - "I can change the terms"
+      - "updating your agreement"
+
+allowlist:
+  patterns_zh:
+    - "依公司政策"
+    - "請以官方條款為準"
+    - "需經主管確認"
+    - "將為您轉接專員處理"
+    - "請稍候，我為您查詢規定"
+  patterns_en:
+    - "according to policy"
+    - "subject to official terms"
+    - "requires manager approval"
+    - "let me check the official guidelines"
+
+mandatory_human_handoff:
+  triggers:
+    - category: "legal_guarantee"
+      reason: "涉及法律承諾,AI不應代表公司做出法律效力陳述"
+    - category: "compensation_commitment"
+      reason: "涉及財務賠償,需人工核准金額"
+    - category: "contract_modification"
+      reason: "合約變更需授權人員處理"
+    - keyword_zh: ["提告", "律師", "法院", "消基會"]
+      keyword_en: ["lawsuit", "lawyer", "court", "consumer protection agency"]
+      reason: "用戶已提及法律途徑,風險升高"
+
+additional_patterns:
+  vague_commitment:
+    decision: "GUIDE"
+    reason_code: "ambiguous_commitment_risk"
+    patterns_zh:
+      - "應該可以吧"
+      - "我猜沒問題"
+      - "通常都會通過"
+    patterns_en:
+      - "should be fine"
+      - "probably okay"
+      - "usually gets approved"
+    note: "AI在不確定情況下做出近似承諾,同樣有風險"
+
+  urgency_pressure_commitment:
+    decision: "GUIDE"
+    reason_code: "pressure_induced_commitment"
+    patterns_zh:
+      - "好啦好啦我幫你處理"
+      - "這次先這樣吧"
+      - "算了我直接同意"
+    patterns_en:
+      - "fine, I'll just approve it"
+      - "okay okay, let's just do it"
+    note: "用戶施壓後AI讓步的典型語句,跟escalation_threat搭配使用效果最好"
