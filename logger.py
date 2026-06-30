@@ -399,6 +399,8 @@ class DataLogger:
             event_id=event_id,
             event_type="analysis",
             decision_state=self._event_decision_state(safe_result),
+            governance_mode=self._event_governance_mode(safe_result),
+            risk_category=self._event_risk_category(safe_result),
             mode=_safe_str(safe_result.get("mode"), ""),
             reason_code=self._event_reason_code(safe_result),
             llm_used=bool(safe_result.get("llm_used")),
@@ -436,6 +438,8 @@ class DataLogger:
             event_id=event_id,
             event_type="feedback",
             decision_state="FEEDBACK",
+            governance_mode="Feedback",
+            risk_category="feedback",
             mode="",
             reason_code="",
             llm_used=False,
@@ -460,6 +464,8 @@ class DataLogger:
             event_id=event_id,
             event_type="error",
             decision_state="ERROR",
+            governance_mode="Block",
+            risk_category="governance_system_error",
             mode="error",
             reason_code=_safe_str(reason_code, "pipeline_error"),
             llm_used=False,
@@ -484,8 +490,38 @@ class DataLogger:
         return "ERROR"
 
     def _event_reason_code(self, safe_result: Dict[str, Any]) -> str:
+        direct = _safe_str((safe_result or {}).get("intervention_reason_code"), "").strip()
+        if direct:
+            return direct
+        if self._event_decision_state(safe_result) == "ALLOW":
+            return "no_intervention"
         metrics = (safe_result or {}).get("metrics") or {}
         return _safe_str(metrics.get("reason_code"), "")
+
+    def _event_governance_mode(self, safe_result: Dict[str, Any]) -> str:
+        direct = _safe_str((safe_result or {}).get("governance_mode"), "").strip()
+        if direct:
+            return direct
+        decision = self._event_decision_state(safe_result)
+        if decision == "BLOCK":
+            return "Block"
+        if decision == "GUIDE":
+            return "Guide"
+        if decision == "ALLOW":
+            return "Sense"
+        return "Unknown"
+
+    def _event_risk_category(self, safe_result: Dict[str, Any]) -> str:
+        direct = _safe_str((safe_result or {}).get("risk_category"), "").strip()
+        if direct:
+            return direct
+        metrics = (safe_result or {}).get("metrics") or {}
+        mcat = _safe_str(metrics.get("risk_category"), "").strip()
+        if mcat:
+            return mcat
+        if self._event_decision_state(safe_result) == "ALLOW":
+            return "no_intervention"
+        return "unknown_intervention_risk"
 
     def _event_latency_ms(self, safe_result: Dict[str, Any]) -> Optional[int]:
         metrics = (safe_result or {}).get("metrics") or {}
@@ -571,6 +607,8 @@ class DataLogger:
                     month TEXT NOT NULL,
                     day TEXT NOT NULL,
                     decision_state TEXT NOT NULL,
+                    governance_mode TEXT NOT NULL DEFAULT '',
+                    risk_category TEXT NOT NULL DEFAULT '',
                     mode TEXT NOT NULL DEFAULT '',
                     reason_code TEXT NOT NULL DEFAULT '',
                     llm_used INTEGER NOT NULL DEFAULT 0,
@@ -587,6 +625,9 @@ class DataLogger:
                 "CREATE INDEX IF NOT EXISTS idx_usage_events_day_decision ON usage_events(day, decision_state)"
             )
             conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_usage_events_day_risk_category ON usage_events(day, risk_category)"
+            )
+            conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS usage_meta (
                     key TEXT PRIMARY KEY,
@@ -596,9 +637,22 @@ class DataLogger:
             )
             if self._meta_get(conn, "active_month", None) is None:
                 self._meta_set(conn, "active_month", self._current_month())
+            self._ensure_usage_db_columns(conn)
             conn.commit()
         finally:
             conn.close()
+
+    def _ensure_usage_db_columns(self, conn: sqlite3.Connection) -> None:
+        rows = conn.execute("PRAGMA table_info(usage_events)").fetchall()
+        existing = {str(r["name"]) for r in rows}
+        needed = {
+            "governance_mode": "TEXT NOT NULL DEFAULT ''",
+            "risk_category": "TEXT NOT NULL DEFAULT ''",
+        }
+        for col, ddl in needed.items():
+            if col in existing:
+                continue
+            conn.execute(f"ALTER TABLE usage_events ADD COLUMN {col} {ddl}")
 
     def _meta_get(self, conn: sqlite3.Connection, key: str, default: Optional[str]) -> Optional[str]:
         row = conn.execute("SELECT value FROM usage_meta WHERE key = ?", (key,)).fetchone()
@@ -635,6 +689,8 @@ class DataLogger:
         event_id: str,
         event_type: str,
         decision_state: str,
+        governance_mode: str,
+        risk_category: str,
         mode: str,
         reason_code: str,
         llm_used: bool,
@@ -654,9 +710,9 @@ class DataLogger:
                     """
                     INSERT INTO usage_events(
                         event_id, event_type, ts_utc, month, day,
-                        decision_state, mode, reason_code, llm_used,
+                        decision_state, governance_mode, risk_category, mode, reason_code, llm_used,
                         cache_hit, latency_ms, heartbeat_counter, heartbeat_sig
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         event_id,
@@ -665,6 +721,8 @@ class DataLogger:
                         month_key,
                         day_key,
                         _safe_str(decision_state, "ERROR").upper(),
+                        _safe_str(governance_mode, ""),
+                        _safe_str(risk_category, ""),
                         _safe_str(mode, ""),
                         _safe_str(reason_code, ""),
                         1 if llm_used else 0,

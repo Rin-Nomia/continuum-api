@@ -12,9 +12,10 @@ This document defines:
 1. The external `/api/v1/analyze` response contract for business/legal readability.
 2. The content-free evidence schema written by logger (`build_evidence_v1`).
 
-Key addition in A-P0-2:
+Key additions in A-P0-2/A-P0-3:
 - `governance_mode` (`Sense`/`Guide`/`Block`)
 - `intervention_reason_code` (why the system intervened)
+- `risk_category` / `risk_label` (external-readable high-risk classification)
 
 ---
 
@@ -25,6 +26,8 @@ Key addition in A-P0-2:
 | decision_state | string (`ALLOW`/`GUIDE`/`BLOCK`) | Internal governance decision state | `GUIDE` |
 | governance_mode | string (`Sense`/`Guide`/`Block`) | External-readable mode mapped from `decision_state` | `Guide` |
 | intervention_reason_code | string or null | Specific intervention trigger reason. `null` when no intervention | `unauthorized_refund_commitment` |
+| risk_category | string | Standardized risk taxonomy category from `configs/risk_taxonomy.yaml` | `commitment_refund_discount` |
+| risk_label | string | Human-readable category label for business/legal reporting | `Unauthorized refund or discount commitment` |
 | freq_type | string | Risk/tone category label | `CommitmentRisk` |
 | confidence_final | float | Final confidence in [0,1] | `1.0` |
 | confidence_classifier | float or null | Classifier confidence in [0,1] | `1.0` |
@@ -85,7 +88,29 @@ When `decision_state = ALLOW`, `intervention_reason_code = null`.
 
 ---
 
-## 5) Evidence payload required keys (logger schema)
+## 5) risk_category standardization
+
+`risk_category` and `risk_label` are resolved from:
+
+- config: `configs/risk_taxonomy.yaml`
+- primary key: `intervention_reason_code`
+- fallback for `decision_state=ALLOW`: `no_intervention`
+
+Current category set:
+
+- `no_intervention`
+- `commitment_refund_discount`
+- `commitment_legal_financial`
+- `policy_authority_override`
+- `escalation_pressure`
+- `crisis_safety`
+- `tone_behavioral_risk`
+- `governance_system_error`
+- `unknown_intervention_risk` (fallback)
+
+---
+
+## 6) Evidence payload required keys (logger schema)
 
 The logger evidence payload (`build_evidence_v1`) is content-free and requires:
 
@@ -107,12 +132,14 @@ The logger evidence payload (`build_evidence_v1`) is content-free and requires:
 16. `output_source`
 17. `governance_mode`
 18. `intervention_reason_code`
-19. `api_version`
-20. `pipeline_version_fingerprint`
+19. `risk_category`
+20. `risk_label`
+21. `api_version`
+22. `pipeline_version_fingerprint`
 
 ---
 
-## 6) Privacy and validation notes
+## 7) Privacy and validation notes
 
 - No raw input/output text is persisted in evidence.
 - `metrics` and `audit` are scrubbed from content-derived keys before persistence.

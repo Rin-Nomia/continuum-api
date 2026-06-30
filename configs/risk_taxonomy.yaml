@@ -1,0 +1,68 @@
+version: "v1"
+default_category: "no_intervention"
+default_label: "No intervention"
+
+categories:
+  no_intervention:
+    label: "No intervention"
+    description: "Sense mode with no governance action."
+    reason_codes:
+      - "no_intervention"
+
+  commitment_refund_discount:
+    label: "Unauthorized refund or discount commitment"
+    description: "Assistant committed refund/discount beyond authority."
+    reason_codes:
+      - "unauthorized_refund_commitment"
+      - "unauthorized_discount_commitment"
+
+  commitment_legal_financial:
+    label: "Unauthorized legal or financial commitment"
+    description: "Compensation/legal/contract commitments requiring authorized human review."
+    reason_codes:
+      - "unauthorized_compensation_commitment"
+      - "unauthorized_legal_guarantee"
+      - "unauthorized_contract_change"
+      - "mandatory_human_handoff"
+
+  policy_authority_override:
+    label: "Policy or authority override risk"
+    description: "Assistant attempted to bypass policy/process or made vague pressure-induced promises."
+    reason_codes:
+      - "unauthorized_policy_override"
+      - "ambiguous_commitment_risk"
+      - "pressure_induced_commitment"
+
+  escalation_pressure:
+    label: "Escalation pressure risk"
+    description: "User/assistant language indicating public escalation pressure."
+    reason_codes:
+      - "escalation_pressure"
+      - "guide_public_escalation"
+
+  crisis_safety:
+    label: "Crisis safety risk"
+    description: "Self-harm or crisis content requiring hard block and safe handoff."
+    reason_codes:
+      - "crisis_self_harm"
+      - "OOS_CRISIS"
+
+  tone_behavioral_risk:
+    label: "Tone behavioral risk"
+    description: "High-risk communication style detected by tone classifier."
+    reason_codes:
+      - "TONE_ANXIOUS"
+      - "TONE_SHARP"
+      - "TONE_COLD"
+      - "TONE_BLUR"
+      - "TONE_PUSHY"
+      - "TONE_RHYTHM"
+      - "TONE_UNKNOWN"
+
+  governance_system_error:
+    label: "Governance system exception"
+    description: "Internal governance handling failure or unknown block reason."
+    reason_codes:
+      - "INTERNAL_GOVERNANCE_BLOCK"
+      - "UNKNOWN_GOVERNANCE_BLOCK"
+      - "INPUT_TOO_SHORT"

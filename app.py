@@ -19,6 +19,7 @@ import math
 import asyncio
 import logging
 import hashlib
+import yaml
 from collections import deque
 from typing import Optional, Dict, Any, Tuple, List, Literal, Deque
 from datetime import datetime, timezone
@@ -140,6 +141,79 @@ def _safe_str(v, default: str = "") -> str:
         return default
 
 
+def _risk_taxonomy_candidate_paths() -> List[str]:
+    explicit = os.environ.get("RISK_TAXONOMY_PATH", "").strip()
+    paths: List[str] = []
+    if explicit:
+        paths.append(explicit)
+    # Prefer repo-local config path for consistent API/dashboard terminology.
+    paths.append(os.path.join(BASE_DIR, "configs", "risk_taxonomy.yaml"))
+    # Fallback to cwd-based config for compatibility with existing runners.
+    paths.append("configs/risk_taxonomy.yaml")
+    # dedupe while preserving order
+    out: List[str] = []
+    seen = set()
+    for p in paths:
+        if p and p not in seen:
+            out.append(p)
+            seen.add(p)
+    return out
+
+
+def _load_risk_taxonomy() -> Dict[str, Any]:
+    default_payload: Dict[str, Any] = {
+        "version": "v1",
+        "default_category": "no_intervention",
+        "default_label": "No intervention",
+        "categories": {
+            "no_intervention": {
+                "label": "No intervention",
+                "reason_codes": ["no_intervention"],
+            }
+        },
+    }
+    for p in _risk_taxonomy_candidate_paths():
+        try:
+            if not os.path.exists(p):
+                continue
+            with open(p, "r", encoding="utf-8") as f:
+                raw = yaml.safe_load(f) or {}
+            if isinstance(raw, dict):
+                return raw
+        except Exception as e:
+            logger.warning(f"risk_taxonomy_load_failed:{p}:{e}")
+            continue
+    return default_payload
+
+
+def _build_risk_reason_index(taxonomy: Dict[str, Any]) -> Dict[str, Dict[str, str]]:
+    idx: Dict[str, Dict[str, str]] = {}
+    cats = taxonomy.get("categories") if isinstance(taxonomy, dict) else {}
+    if not isinstance(cats, dict):
+        return idx
+    for cat, node in cats.items():
+        if not isinstance(node, dict):
+            continue
+        label = _safe_str(node.get("label"), _safe_str(cat, "Unknown risk"))
+        reason_codes = node.get("reason_codes", [])
+        if not isinstance(reason_codes, list):
+            continue
+        for rc in reason_codes:
+            key = _safe_str(rc, "").strip().upper()
+            if not key:
+                continue
+            idx[key] = {
+                "risk_category": _safe_str(cat, "unknown_risk"),
+                "risk_label": label,
+            }
+    return idx
+
+
+RISK_TAXONOMY: Dict[str, Any] = _load_risk_taxonomy()
+RISK_REASON_INDEX: Dict[str, Dict[str, str]] = _build_risk_reason_index(RISK_TAXONOMY)
+RISK_TAXONOMY_VERSION: str = _safe_str(RISK_TAXONOMY.get("version"), "v1")
+
+
 def _env_first(*names: str) -> str:
     for name in names:
         value = os.environ.get(name, "").strip()
@@ -200,6 +274,32 @@ def _intervention_reason_code_from_truth(
         return metric_reason
 
     return "intervention_unknown"
+
+
+def _risk_profile_from_reason(
+    *,
+    decision_state: str,
+    intervention_reason_code: Optional[str],
+) -> Tuple[str, str]:
+    ds = _safe_str(decision_state, "").strip().upper()
+    if ds == "ALLOW":
+        return (
+            _safe_str(RISK_TAXONOMY.get("default_category"), "no_intervention"),
+            _safe_str(RISK_TAXONOMY.get("default_label"), "No intervention"),
+        )
+
+    rc = _safe_str(intervention_reason_code, "").strip()
+    if not rc:
+        return ("unknown_intervention_risk", "Unknown intervention risk")
+
+    entry = RISK_REASON_INDEX.get(rc.upper())
+    if isinstance(entry, dict):
+        return (
+            _safe_str(entry.get("risk_category"), "unknown_intervention_risk"),
+            _safe_str(entry.get("risk_label"), "Unknown intervention risk"),
+        )
+
+    return ("unknown_intervention_risk", "Unknown intervention risk")
 
 
 def _decision_state_from_truth(*, mode: str, freq_type: str, scenario: str) -> str:
@@ -348,6 +448,8 @@ EVIDENCE_SCHEMA_V1 = {
         "output_source",
         "governance_mode",
         "intervention_reason_code",
+        "risk_category",
+        "risk_label",
         "api_version",
         "pipeline_version_fingerprint",
     ],
@@ -390,6 +492,10 @@ def validate_evidence_v1(e: Dict[str, Any]) -> Tuple[bool, List[str]]:
         errors.append("type:governance_mode_not_str")
     if "intervention_reason_code" in e and e.get("intervention_reason_code") is not None and not isinstance(e.get("intervention_reason_code"), str):
         errors.append("type:intervention_reason_code_not_str_or_none")
+    if "risk_category" in e and not isinstance(e.get("risk_category"), str):
+        errors.append("type:risk_category_not_str")
+    if "risk_label" in e and not isinstance(e.get("risk_label"), str):
+        errors.append("type:risk_label_not_str")
 
     return (len(errors) == 0), errors
 
@@ -412,6 +518,8 @@ def build_evidence_v1(
     output_source: Optional[str],
     governance_mode: str,
     intervention_reason_code: Optional[str],
+    risk_category: str,
+    risk_label: str,
     pipeline_version_fingerprint: str,
 ) -> Dict[str, Any]:
     # fingerprints
@@ -454,6 +562,8 @@ def build_evidence_v1(
         "output_source": output_source,
         "governance_mode": _safe_str(governance_mode, "Sense"),
         "intervention_reason_code": _none_if_empty(_safe_str(intervention_reason_code, "")),
+        "risk_category": _safe_str(risk_category, "no_intervention"),
+        "risk_label": _safe_str(risk_label, "No intervention"),
 
         # versioning
         "api_version": APP_VERSION,
@@ -566,6 +676,8 @@ class AnalyzeResponse(BaseModel):
     decision_state: Literal["ALLOW", "GUIDE", "BLOCK"]
     governance_mode: Literal["Sense", "Guide", "Block"]
     intervention_reason_code: Optional[str] = None
+    risk_category: str
+    risk_label: str
     freq_type: str
     confidence_final: float
     confidence_classifier: Optional[float] = None
@@ -624,6 +736,7 @@ async def health():
         "service_halted_by_license": service_halted_by_license,
         "logger_ready": data_logger is not None,
         "github_backup_enabled": github_backup is not None,
+        "risk_taxonomy_version": RISK_TAXONOMY_VERSION,
         "time": _utc_now(),
         "version": APP_VERSION,
     }
@@ -847,6 +960,12 @@ async def analyze(req: AnalyzeRequest):
         metrics=metrics,
         audit=audit_top,
     )
+    risk_category, risk_label = _risk_profile_from_reason(
+        decision_state=decision_state,
+        intervention_reason_code=intervention_reason_code,
+    )
+    metrics["risk_category"] = risk_category
+    metrics["risk_label"] = risk_label
 
     # Fingerprint (truth)
     pipeline_fp = (
@@ -875,6 +994,8 @@ async def analyze(req: AnalyzeRequest):
                 output_source=output_source,
                 governance_mode=governance_mode,
                 intervention_reason_code=intervention_reason_code,
+                risk_category=risk_category,
+                risk_label=risk_label,
                 pipeline_version_fingerprint=pipeline_fp,
             )
 
@@ -908,6 +1029,8 @@ async def analyze(req: AnalyzeRequest):
         decision_state=decision_state,
         governance_mode=governance_mode,
         intervention_reason_code=intervention_reason_code,
+        risk_category=risk_category,
+        risk_label=risk_label,
         freq_type=freq_type,
         confidence_final=confidence_final,
         confidence_classifier=confidence_classifier,

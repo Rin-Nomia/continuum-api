@@ -17,6 +17,7 @@ import requests
 import sqlite3
 import sys
 import time
+import yaml
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
@@ -80,6 +81,84 @@ _DEFAULT_RUNTIME_CONTROLS: Dict[str, Any] = {
         "Pushy": {"ge1": 1.0, "ge2": 1.0, "ge3": 1.0},
     },
 }
+
+
+def _risk_taxonomy_candidate_paths() -> List[Path]:
+    explicit = os.environ.get("RISK_TAXONOMY_PATH", "").strip()
+    out: List[Path] = []
+    if explicit:
+        out.append(Path(explicit))
+    out.append(APP_DIR / "configs" / "risk_taxonomy.yaml")
+    out.append(WORKSPACE_DIR / "continuum-api-repo" / "configs" / "risk_taxonomy.yaml")
+    out.append(WORKSPACE_DIR / "configs" / "risk_taxonomy.yaml")
+    dedup: List[Path] = []
+    seen = set()
+    for p in out:
+        key = str(p)
+        if key in seen:
+            continue
+        dedup.append(p)
+        seen.add(key)
+    return dedup
+
+
+@st.cache_data(show_spinner=False)
+def _risk_taxonomy_index() -> Dict[str, Dict[str, str]]:
+    default = {
+        "NO_INTERVENTION": {"risk_category": "no_intervention", "risk_label": "No intervention"},
+        "INTERVENTION_UNKNOWN": {"risk_category": "unknown_intervention_risk", "risk_label": "Unknown intervention risk"},
+    }
+    raw: Dict[str, Any] = {}
+    for p in _risk_taxonomy_candidate_paths():
+        try:
+            if not p.exists():
+                continue
+            loaded = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
+            if isinstance(loaded, dict):
+                raw = loaded
+                break
+        except Exception:
+            continue
+    cats = raw.get("categories") if isinstance(raw, dict) else {}
+    if not isinstance(cats, dict):
+        return default
+    idx: Dict[str, Dict[str, str]] = dict(default)
+    for cat, node in cats.items():
+        if not isinstance(node, dict):
+            continue
+        label = str(node.get("label", cat))
+        reason_codes = node.get("reason_codes", [])
+        if not isinstance(reason_codes, list):
+            continue
+        for rc in reason_codes:
+            key = str(rc).strip().upper()
+            if not key:
+                continue
+            idx[key] = {"risk_category": str(cat), "risk_label": label}
+    return idx
+
+
+def _governance_mode_from_decision_state(decision_state: str) -> str:
+    ds = str(decision_state or "").strip().upper()
+    if ds == "BLOCK":
+        return "Block"
+    if ds == "GUIDE":
+        return "Guide"
+    if ds == "ALLOW":
+        return "Sense"
+    return "Unknown"
+
+
+def _risk_profile_for_dashboard(reason_code: str, decision_state: str) -> Tuple[str, str]:
+    ds = str(decision_state or "").strip().upper()
+    if ds == "ALLOW":
+        return ("no_intervention", "No intervention")
+    rc = str(reason_code or "").strip().upper()
+    idx = _risk_taxonomy_index()
+    if rc in idx:
+        item = idx[rc]
+        return (str(item.get("risk_category", "unknown_intervention_risk")), str(item.get("risk_label", "Unknown intervention risk")))
+    return ("unknown_intervention_risk", "Unknown intervention risk")
 
 
 def _load_runtime_controls(path: Path) -> Dict[str, Any]:
@@ -481,6 +560,9 @@ def _export_scrub_log(
     records: List[Dict[str, Any]] = []
     for row in rows:
         event_id = str(row["event_id"])
+        decision_state = str(row["decision_state"] or "ERROR")
+        reason_code = str(row["reason_code"] or "")
+        risk_category, risk_label = _risk_profile_for_dashboard(reason_code, decision_state)
         records.append(
             {
                 "schema_version": "1.0",
@@ -489,12 +571,18 @@ def _export_scrub_log(
                 "output_fp_sha256": hashlib.sha256(f"out:{event_id}".encode("utf-8")).hexdigest(),
                 "output_length": 0,
                 "freq_type": "Unknown",
+                "governance_mode": _governance_mode_from_decision_state(decision_state),
+                "intervention_reason_code": reason_code,
+                "risk_category": risk_category,
+                "risk_label": risk_label,
                 "mode": str(row["mode"] or ""),
                 "scenario": "compliance_export",
                 "confidence": {"final": 0.0, "classifier": 0.0},
                 "metrics": {
-                    "decision_state": str(row["decision_state"] or "ERROR"),
-                    "reason_code": str(row["reason_code"] or ""),
+                    "decision_state": decision_state,
+                    "reason_code": reason_code,
+                    "risk_category": risk_category,
+                    "risk_label": risk_label,
                     "latency_ms": _safe_int(row["latency_ms"], 0),
                 },
                 "audit": {
@@ -631,6 +719,11 @@ def _render_demo_playground() -> None:
             return
 
         decision = str(data.get("decision_state", "N/A"))
+        governance_mode = str(data.get("governance_mode", _governance_mode_from_decision_state(decision)))
+        intervention_reason_code = data.get("intervention_reason_code")
+        intervention_reason_code_text = "" if intervention_reason_code is None else str(intervention_reason_code)
+        risk_category = str(data.get("risk_category", "unknown_intervention_risk"))
+        risk_label = str(data.get("risk_label", "Unknown intervention risk"))
         freq_type = str(data.get("freq_type", "Unknown"))
         conf = data.get("confidence_final", 0.0)
         try:
@@ -640,10 +733,13 @@ def _render_demo_playground() -> None:
         repaired = data.get("repaired_text")
         repaired_text = "" if repaired is None else str(repaired)
 
-        m1, m2, m3 = st.columns(3)
+        m1, m2, m3, m4 = st.columns(4)
         m1.metric("決策結果", decision)
-        m2.metric("語氣類型", freq_type)
-        m3.metric("信心值", f"{conf_val:.2f}")
+        m2.metric("治理模式", governance_mode)
+        m3.metric("風險分類", risk_category)
+        m4.metric("信心值", f"{conf_val:.2f}")
+        st.caption(f"介入原因碼：`{intervention_reason_code_text or 'null'}`")
+        st.caption(f"風險標籤：{risk_label}｜語氣類型：{freq_type}")
         st.caption(f"API 來源：`{url}`")
 
         col_a, col_b = st.columns(2)
