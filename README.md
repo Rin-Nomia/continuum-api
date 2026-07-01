@@ -1,6 +1,6 @@
 ---
-title: Continuum API
-emoji: 💎
+title: Trust Layer
+emoji: 🛡️
 colorFrom: blue
 colorTo: purple
 sdk: docker
@@ -9,229 +9,66 @@ app_file: app.py
 pinned: false
 ---
 
-## Business & Licensing
+# Trust Layer — 客服 AI 承諾邊界治理層
 
-- Commercial Pitch Deck Summary: [docs/COMMERCIAL_PITCH_V1.md](docs/COMMERCIAL_PITCH_V1.md)
-- Stability Acceptance (1200 decisions, 100% consistency): [docs/STABILITY_ACCEPTANCE_REPORT_V1.md](docs/STABILITY_ACCEPTANCE_REPORT_V1.md)
-- Technical Whitepaper Summary: [docs/TECHNICAL_WHITEPAPER_SUMMARY_V1.md](docs/TECHNICAL_WHITEPAPER_SUMMARY_V1.md)
-- Commercial Billing & License Ops: [docs/COMMERCIAL_BILLING_OPERATIONS_V1.md](docs/COMMERCIAL_BILLING_OPERATIONS_V1.md)
-- Finance Reconciliation SOP: [docs/FINANCE_RECONCILIATION_SOP_V1.md](docs/FINANCE_RECONCILIATION_SOP_V1.md)
-- License Template: [license/sample_license_template.json](license/sample_license_template.json)
-- C3 Command Center (Admin Console): [docs/C3_COMMAND_CENTER_V1.md](docs/C3_COMMAND_CENTER_V1.md)
-- C3 Cloud Deployment (Oracle Always Free): [docs/CLOUD_DEPLOYMENT_ORACLE_FREE_V1.md](docs/CLOUD_DEPLOYMENT_ORACLE_FREE_V1.md)
-- C3 Cloud Deployment (Render + HTTPS): [docs/CLOUD_DEPLOYMENT_RENDER_V1.md](docs/CLOUD_DEPLOYMENT_RENDER_V1.md)
-- C3 Dashboard Preview: [assets/dashboard_preview.png](assets/dashboard_preview.png)
-- 5 分鐘客戶接入指南: [QUICKSTART.md](QUICKSTART.md)
+AI 客服回答問題已是基本能力。  
+但 AI 在高壓對話裡會亂給承諾——  
+用戶拿著 AI 說過的話要求兌現，企業不認帳，信任崩潰。  
 
-[Oracle cloud-init template](deploy/oracle/cloud-init.yaml)
-
-[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/Rin-Nomia/continuum-api)
+Trust Layer 在對話裡即時偵測六種高風險狀態與未授權承諾，  
+輸出 ALLOW / GUIDE / BLOCK 治理決策，並保留可稽核記錄。  
+讓你的 AI 客服，值得被信任。  
 
 ---
 
-# Continuum API — RIN Protocol
+## 三模式治理
 
-**Tone Misalignment Firewall**  
-語氣錯頻辨識 × 節奏修復 API
-
-Continuum is **not** a sentiment analyzer.  
-It is a **tone safety layer** designed to prevent conversational breakdowns caused by misaligned tone, rhythm, or pressure — especially in empathic or companion-style AI systems.
+- **Sense（ALLOW）**：一般互動，無需介入，記錄存檔
+- **Guide（GUIDE）**：風險互動，介入引導，限制承諾範圍
+- **Block（BLOCK）**：危機互動，攔截輸出，轉交人工處理
 
 ---
 
-## 🧠 What This System Does (Plain Language)
+## 系統定位
 
-Given a **single sentence**, Continuum will:
+Trust Layer 不替換既有客服 AI。  
+它是在高風險互動時介入的治理層，提供：
 
-1. **Normalize and gate the input** (length, language, safety checks)
-2. **Analyze rhythm and emotional pressure** (speed, intensity, pause patterns)
-3. **Classify tone misalignment type** (Anxious / Cold / Sharp / Blur / Pushy)
-4. **Estimate confidence of the judgment**
-5. **Decide whether to**:
-   - repair the tone
-   - suggest an adjustment
-   - or leave it untouched (safe)
-
-This design prevents over-correction and preserves the user’s original intent.
+- 危機訊號攔截（例如自傷/危機語句）
+- 承諾邊界偵測（退款、折扣、賠償、法律保證、合約變更）
+- 語氣與壓力風險治理（高壓、推進、模糊風險）
 
 ---
 
-## 🎯 Supported Tone Types (MVP Scope)
+## API 回傳核心欄位
 
-- **Anxious** — help-seeking, overwhelmed, uncertainty
-- **Cold** — detached, withdrawn, disengaged
-- **Sharp** — harsh, commanding, high-pressure
-- **Blur** — vague, ambiguous, unclear
-- **Pushy** — pressing, demanding, urgency-driven
+`POST /api/v1/analyze` 會固定回傳：
 
-> Neutral or safe tone is explicitly supported and will **not** be modified.
+- `decision_state`：`ALLOW` / `GUIDE` / `BLOCK`
+- `governance_mode`：`Sense` / `Guide` / `Block`
+- `intervention_reason_code`：介入原因碼（ALLOW 時為 `null`）
+- `risk_category`：標準化風險分類
+- `risk_label`：人類可讀風險標籤
 
----
+詳見：
 
-## 🧪 Decision Contract (Public API)
-
-Public responses are normalized to one governance decision:
-
-- **ALLOW** → tone is safe, pass-through behavior
-- **GUIDE** → constrained guidance / rewrite path applied
-- **BLOCK** → out-of-scope or hard safety boundary
-
-> Internal pipeline modes (`repair` / `suggest` / `no-op` / `block`) remain runtime truth,  
-> but external API clients should consume `decision_state` only.
+- [docs/CONTRACT_V1.md](docs/CONTRACT_V1.md)
+- [docs/EVIDENCE_SCHEMA_V1.md](docs/EVIDENCE_SCHEMA_V1.md)
+- [docs/RISK_TAXONOMY_V1.md](docs/RISK_TAXONOMY_V1.md)
 
 ---
 
-## 🏗️ Architecture Overview
+## 快速連結
 
-Input Text  
-↓  
-Normalization & Length Gate  
-↓  
-Out-of-Scope Safety Gate (crisis/self-harm)  
-↓  
-Rhythm Analysis (speed / emotion / pause)  
-↓  
-Tone Classification (rule-based + margin confidence)  
-↓  
-Confidence Calibration (rhythm-aware)  
-↓  
-Router  
-├── repair (high confidence)  
-├── suggest (medium confidence)  
-└── no-op (safe / neutral)  
-↓  
-Output
+- API 文件：`/docs`
+- 狀態頁：`/status`
+- Playground：`/playground`
+- C3 Dashboard 說明：[docs/C3_COMMAND_CENTER_V1.md](docs/C3_COMMAND_CENTER_V1.md)
+- 快速接入：[QUICKSTART.md](QUICKSTART.md)
 
 ---
 
-## 🚫 What This System Explicitly Does NOT Do
+## 邊界聲明
 
-Continuum is **intentionally limited** by design.
-
-It does **not** perform:
-
-- ❌ Sentiment scoring (positive / negative)
-- ❌ Intent guessing or hidden-meaning inference
-- ❌ Psychological diagnosis or mental health evaluation
-- ❌ Multi-turn memory or long-term user profiling
-- ❌ Clinical or therapeutic intervention
-
-These are **out of scope** for the MVP.
-
----
-
-## 🛑 Safety & Capability Boundaries (Important)
-
-Continuum is **not designed** to handle:
-
-- Suicidal ideation or immediate self-harm risk
-- Severe mental health crises
-- Situations requiring emergency intervention or clinical judgment
-
-In such cases, the system will trigger an **Out-of-Scope Safety Gate** and return:
-
-- `decision_state: "BLOCK"`
-- `freq_type: "OutOfScope"`
-- `scenario: "crisis_out_of_scope"`
-- `repaired_text: ""`
-
-> **Design principle:**  
-> Continuum only intervenes where **tone affects AI response quality**,  
-> but **does not cross into crisis or medical territory**.
-
-It is a **preventive, non-therapeutic tone repair layer**, meant to improve conversational safety — not replace crisis systems.
-
----
-
-## 🧩 Design Philosophy
-
-- Explainable over powerful
-- Predictable over clever
-- Safety gates over maximal recall
-- User voice preserved at all times
-
-Continuum is designed as a **pre-LLM tone firewall**, not a replacement for the model itself.
-
----
-
-## 🚀 API Endpoints
-
-### Health Check
-
-```bash
-GET /health
-```
-
-### Analyze Single Sentence
-
-```bash
-POST /api/v1/analyze
-Body:
-{
-  "text": "your input text"
-}
-Response Example:
-{
-  "decision_state": "GUIDE",
-  "freq_type": "Anxious",
-  "confidence_final": 0.73,
-  "confidence_classifier": 0.66,
-  "scenario": "general",
-  "repaired_text": "Let's slow this down and clarify one step at a time.",
-  "repair_note": null,
-  "privacy_guard_ok": true
-}
-```
-
-### Operations Metrics
-
-```bash
-GET /api/v1/ops/metrics
-```
-
-Returns aggregated operability indicators:
-- decision_state distribution
-- p50/p95/p99 latency
-- llm usage rate
-- out-of-scope hit rate
-
-⸻
-
-🔄 Sync & Deployment
-
-This repository automatically syncs pipeline, core logic, and configs from:
-	•	https://github.com/Rin-Nomia/z1_mvp
-
-⚠️ Do not edit synced files directly.
-All logic changes should be made in z1_mvp.
-
-⸻
-
-🛣️ Phase 2 (Out of Scope)
-
-The following capabilities are intentionally excluded from the MVP:
-	•	Multi-label tone blending
-	•	Hidden meaning inference
-	•	Relationship or long-term context awareness
-	•	Multi-turn conversation repair
-	•	Culture-specific tone policies
-
-These will only be introduced behind explicit feature gates.
-
-⸻
-
-🔗 Links
-	•	z1_mvp: https://github.com/Rin-Nomia/z1_mvp
-	•	Playground: https://rin-nomia.github.io/continuum-api/playground.html
-	•	API Docs: /docs
-	•	Product Constitution v1.0: docs/PRODUCT_CONSTITUTION_v1_0.md
-	•	Product Constitution (External) v1.0: docs/PRODUCT_CONSTITUTION_EXTERNAL_v1_0.md
-	•	Evidence Schema v1.0: docs/EVIDENCE_SCHEMA_V1.md
-	•	Stability Acceptance Report v1: docs/STABILITY_ACCEPTANCE_REPORT_V1.md
-	•	Technical Whitepaper Summary v1: docs/TECHNICAL_WHITEPAPER_SUMMARY_V1.md
-
-⸻
-
-RIN Protocol — Continuum
-Tone safety before intelligence
-Built by Rin Nomia
+Trust Layer 能偵測的是有明確語言訊號的高風險對話。  
+它不保證攔截所有承諾風險，不替代法務審查，不提供法律建議。  

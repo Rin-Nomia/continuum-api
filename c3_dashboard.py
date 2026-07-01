@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Continuum Command Center (C3)
+Trust Layer Command Center (C3)
 
-Independent operations dashboard for commercial v1.1.
+Operations dashboard for customer-service AI commitment-boundary governance.
 """
 
 from __future__ import annotations
@@ -750,8 +750,8 @@ def _render_demo_playground() -> None:
 
 
 def _render_login() -> None:
-    st.title("Continuum Command Center (C3)")
-    st.caption("Commercial operations dashboard (localhost only)")
+    st.title("Trust Layer Command Center (C3)")
+    st.caption("客服 AI 承諾邊界治理營運面板（localhost only）")
     admin_pwd = _admin_password()
     admin_hash = _admin_password_hash()
     if not admin_pwd and not admin_hash:
@@ -867,7 +867,7 @@ def _render_header(
 
 
 def main() -> None:
-    st.set_page_config(page_title="Continuum Command Center", page_icon=":shield:", layout="wide")
+    st.set_page_config(page_title="Trust Layer Command Center", page_icon=":shield:", layout="wide")
     _render_login()
 
     usage_db_path = _default_usage_db_path()

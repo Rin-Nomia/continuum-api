@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Continuum — AI Decision Governance Infrastructure</title>
+  <title>Trust Layer — 客服 AI 治理層</title>
   <style>
     :root{
       --bg:#0a0a0a;
@@ -686,9 +686,9 @@
   <main class="governance-console">
     <section class="hero-header">
       <div class="brand">
-        <h1>Continuum</h1>
-        <span class="tag">AI Decision Governance Infrastructure</span>
-        <p class="hero-tagline">The most expensive AI failures don't look like failures.<br>A user leaves. A complaint appears. A human agent steps in.<br>Continuum intervenes before any of them happen.</p>
+        <h1>Trust Layer — 客服 AI 治理層</h1>
+        <span class="tag">客服 AI 承諾邊界治理層</span>
+        <p class="hero-tagline">即時偵測高風險互動與未授權承諾，<br>輸出 Sense / Guide / Block 治理決策，<br>並保留可稽核證據。</p>
       </div>
       <div class="status-grid">
         <div class="status-card">
@@ -803,13 +803,13 @@
             <div class="k">Governance Decision</div>
             <div class="decision-value allow" id="decisionValue">ALLOW</div>
             <div class="objective-k">Governance Objective</div>
-            <div class="objective" id="interventionObjective">No intervention required. Interaction approved for standard processing.</div>
+            <div class="objective" id="interventionObjective">Sense：一般互動，無需介入</div>
             <div class="intervention-k">Intervention Applied</div>
             <ul id="interventionList">
               <li>No intervention applied.</li>
             </ul>
             <div class="causality-box" id="causalityBox">
-              <div class="causality-k">GOVERNANCE REASONING</div>
+            <div class="causality-k">治理推理路徑</div>
               <div class="causality-chain" id="causalityChain"></div>
             </div>
           </div>
@@ -852,7 +852,7 @@
     </section>
   </main>
 
-  <footer>Continuum — AI Decision Governance Infrastructure | Governance Evidence v1</footer>
+  <footer>Trust Layer — 客服 AI 治理層 | Governance Evidence v1</footer>
 
   <script>
     const API_URL = 'https://rinnomia-continuum-api.hf.space/api/v1/analyze';
@@ -891,22 +891,22 @@
     };
 
     const OBJECTIVE_MAP = {
-      ALLOW: "No intervention required. Interaction approved for standard processing.",
-      GUIDE: "Preserve user agency while reducing escalation risk.",
-      BLOCK: "Prevent unsafe output. Escalate to human oversight immediately."
+      ALLOW: "Sense：一般互動，無需介入",
+      GUIDE: "Guide：風險互動，介入引導",
+      BLOCK: "Block：危機互動，攔截轉人工"
     };
 
     const INTERVENTION_MAP = {
       GUIDE: ["Response Constraint", "Tone Limitation", "Escalation Prevention"],
       BLOCK: ["Output Suppression", "Crisis Routing", "Human Escalation Triggered"],
-      ALLOW: ["No intervention applied."]
+      ALLOW: ["Sense：一般互動，無需介入"]
     };
 
-    const CAUSALITY_ALLOW = [
-      "Input assessed within normal operational parameters",
-      "No risk signals detected",
-      "Standard processing policy applied",
-      "Interaction approved for unrestricted response"
+      const CAUSALITY_ALLOW = [
+      "互動內容處於一般風險範圍",
+      "未觸發高風險訊號",
+      "系統維持 Sense 模式",
+      "記錄留存，不進行介入"
     ];
 
     function useSample(label){
@@ -1223,7 +1223,7 @@
 
       if (d === "BLOCK"){
         content.innerHTML = `
-          <div class="outcome-title">Without Continuum:</div>
+          <div class="outcome-title">Without Trust Layer:</div>
           <div class="outcome-section">
             <ul class="outcome-list">
               <li class="without-item">The AI continues responding in an unsafe context</li>
@@ -1232,7 +1232,7 @@
             </ul>
           </div>
           <div class="outcome-section">
-            <div class="outcome-section-title">With Continuum:</div>
+            <div class="outcome-section-title">With Trust Layer:</div>
             <ul class="outcome-list">
               <li class="with-item">Output suppressed immediately</li>
               <li class="with-item">Human oversight triggered</li>
@@ -1250,11 +1250,11 @@
       content.innerHTML = `
         <div class="outcome-title">${c.label}</div>
         <div class="outcome-section">
-          <div class="outcome-section-title">Without Continuum:</div>
+          <div class="outcome-section-title">Without Trust Layer:</div>
           <ul class="outcome-list">${withoutItems}</ul>
         </div>
         <div class="outcome-section">
-          <div class="outcome-section-title">With Continuum:</div>
+          <div class="outcome-section-title">With Trust Layer:</div>
           <ul class="outcome-list">${withItems}</ul>
         </div>
       `;
