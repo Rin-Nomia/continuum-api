@@ -16,6 +16,7 @@ SEALING PATCH (V1.0 Evidence Contract + Enterprise Audit):
 import os
 import time
 import math
+import inspect
 import asyncio
 import logging
 import hashlib
@@ -310,6 +311,38 @@ def _decision_state_from_truth(*, mode: str, freq_type: str, scenario: str) -> s
         return "BLOCK"
 
     return _decision_from_mode(mode)
+
+
+def _run_pipeline_with_source(pipeline_obj: "Z1Pipeline", text: str, source: str) -> Dict[str, Any]:
+    """
+    Source-aware pipeline dispatch with backward compatibility:
+    - New pipeline: process(text, source=...)
+    - Old pipeline: process(text) and app-level fallback behavior
+    """
+    src = _safe_str(source, "").strip().lower()
+
+    try:
+        sig = inspect.signature(pipeline_obj.process)
+        if "source" in sig.parameters:
+            return pipeline_obj.process(text, source=src)
+    except Exception:
+        pass
+
+    # Legacy pipeline fallback
+    if src != "user":
+        return pipeline_obj.process(text)
+
+    # source=user -> prioritize user-tone/safety by disabling commitment guard in this call.
+    original_cfg = getattr(pipeline_obj, "commitment_cfg", None)
+    if isinstance(original_cfg, dict):
+        try:
+            pipeline_obj.commitment_cfg = dict(original_cfg)
+            pipeline_obj.commitment_cfg["enabled"] = False
+            return pipeline_obj.process(text)
+        finally:
+            pipeline_obj.commitment_cfg = original_cfg
+
+    return pipeline_obj.process(text)
 
 
 def _percentile(values: List[int], p: float) -> Optional[float]:
@@ -670,6 +703,7 @@ app.add_middleware(
 # -------------------- Models --------------------
 class AnalyzeRequest(BaseModel):
     text: str = Field(..., min_length=PIPELINE_MIN_INPUT_LENGTH, max_length=PIPELINE_MAX_INPUT_LENGTH)
+    source: Optional[Literal["user", "ai_draft"]] = None
 
 
 class AnalyzeResponse(BaseModel):
@@ -890,7 +924,8 @@ async def analyze(req: AnalyzeRequest):
         raise HTTPException(503, detail)
 
     t0 = time.time()
-    result = pipeline.process(req.text)
+    source_norm = _safe_str(req.source, "").strip().lower()
+    result = _run_pipeline_with_source(pipeline, req.text, source_norm)
 
     if result.get("error"):
         if data_logger and hasattr(data_logger, "log_error_event"):

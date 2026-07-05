@@ -1,1379 +1,464 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-Hant">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Trust Layer — 客服 AI 治理層</title>
+  <title>Trust Layer — 雙輸入治理 Playground</title>
   <style>
-    :root{
-      --bg:#0a0a0a;
-      --card:#111;
-      --border:#2b2b2b;
-      --text:#ffffff;
-      --muted:#a8a8a8;
-      --pending:#5a5a5a;
-      --allow:#51cf66;
-      --guide:#ffd43b;
-      --block:#ff6b6b;
+    :root {
+      --bg: #0a0a0a;
+      --card: #121212;
+      --border: #2d2d2d;
+      --text: #f4f4f4;
+      --muted: #a3a3a3;
+      --sense: #51cf66;
+      --guide: #ffd43b;
+      --block: #ff6b6b;
+      --accent: #4a9eff;
     }
 
-    *{box-sizing:border-box;margin:0;padding:0}
-
-    body{
-      background:var(--bg);
-      color:var(--text);
-      font-family:system-ui,-apple-system,sans-serif;
-      line-height:1.5;
-      padding:20px;
-    }
-
-    .governance-console{
-      max-width:1360px;
-      margin:0 auto;
-      display:grid;
-      gap:14px;
-    }
-
-    section{
-      background:var(--card);
-      border:1px solid var(--border);
-      border-radius:10px;
-      padding:16px;
-    }
-
-    .hero-header{
-      display:flex;
-      justify-content:space-between;
-      align-items:flex-start;
-      gap:16px;
-    }
-
-    .brand h1{
-      font-size:1.45rem;
-      letter-spacing:0.2px;
-      margin-bottom:6px;
-    }
-
-    .brand .tag{
-      display:inline-flex;
-      padding:4px 10px;
-      border-radius:999px;
-      border:1px solid var(--border);
-      color:#d4d4d4;
-      font-size:0.85rem;
-    }
-
-    .hero-tagline{
-      margin-top:10px;
-      color:#a8a8a8;
-      font-size:0.88rem;
-      line-height:1.6;
-      max-width:520px;
-    }
-
-    .hero-tagline br{
-      display:block;
-      content:"";
-    }
-
-    .status-grid{
-      display:grid;
-      grid-template-columns:repeat(3,minmax(160px,1fr));
-      gap:10px;
-      min-width:480px;
-    }
-
-    .status-card{
-      background:#0d0d0d;
-      border:1px solid var(--border);
-      border-radius:8px;
-      padding:10px 12px;
-    }
-
-    .status-card .k{
-      color:var(--muted);
-      font-size:0.78rem;
-      text-transform:uppercase;
-      letter-spacing:0.6px;
-    }
-
-    .status-card .v{
-      margin-top:4px;
-      font-size:1rem;
-      font-weight:800;
-    }
-
-    .active{color:var(--allow)}
-
-    .global-governance-metrics{
-      background:var(--card);
-      border:1px solid var(--border);
-      border-radius:10px;
-      padding:14px 16px;
-      display:grid;
-      gap:10px;
-    }
-
-    .metrics-title{
-      font-size:0.9rem;
-      color:#d8d8d8;
-      font-weight:700;
-      letter-spacing:0.2px;
-    }
-
-    .metrics-grid{
-      display:grid;
-      grid-template-columns:repeat(4,minmax(120px,1fr));
-      gap:10px;
-    }
-
-    .metric-item{
-      background:#0d0d0d;
-      border:1px solid var(--border);
-      border-radius:8px;
-      padding:10px;
-    }
-
-    .metric-item .label{
-      color:var(--muted);
-      font-size:0.76rem;
-      letter-spacing:0.4px;
-      text-transform:uppercase;
-    }
-
-    .metric-item .value{
-      margin-top:4px;
-      color:var(--text);
-      font-size:1.32rem;
-      font-weight:800;
-      letter-spacing:0.2px;
-    }
-
-    .metrics-footnote{
-      color:#8b8b8b;
-      font-size:0.68rem;
-      letter-spacing:0.2px;
-    }
-
-    .section-title{
-      font-size:1rem;
-      font-weight:800;
-      margin-bottom:10px;
-      letter-spacing:0.2px;
-    }
-
-    .governance-pipeline .pipeline-flow{
-      display:grid;
-      grid-template-columns:repeat(11,1fr);
-      gap:8px;
-      align-items:center;
-    }
-
-    .pipeline-step{
-      grid-column:span 1;
-      border:1px solid var(--border);
-      border-radius:8px;
-      padding:10px 8px;
-      text-align:center;
-      min-height:62px;
-      display:flex;
-      flex-direction:column;
-      justify-content:center;
-      gap:4px;
-      background:#0d0d0d;
-      color:#cfcfcf;
-      transition:all .2s ease;
-    }
-
-    .pipeline-step .name{
-      font-size:0.74rem;
-      line-height:1.2;
-      letter-spacing:0.2px;
-    }
-
-    .pipeline-step .state{
-      font-size:0.72rem;
-      color:var(--pending);
-      text-transform:uppercase;
-      letter-spacing:0.5px;
-    }
-
-    .pipeline-step.pending .state{color:var(--pending)}
-    .pipeline-step.active{
-      border-color:#5f6f8f;
-      box-shadow:0 0 0 1px #5f6f8f inset;
-    }
-    .pipeline-step.active .state{color:#88b3ff}
-    .pipeline-step.allow{
-      border-color:var(--allow);
-      box-shadow:0 0 0 1px var(--allow) inset;
-    }
-    .pipeline-step.guide{
-      border-color:var(--guide);
-      box-shadow:0 0 0 1px var(--guide) inset;
-    }
-    .pipeline-step.block{
-      border-color:var(--block);
-      box-shadow:0 0 0 1px var(--block) inset;
-    }
-    .pipeline-step.allow .state{color:var(--allow)}
-    .pipeline-step.guide .state{color:var(--guide)}
-    .pipeline-step.block .state{color:var(--block)}
-
-    .pipeline-step.sev-low{
-      border-color:#4a9eff !important;
-      box-shadow:0 0 0 1px #4a9eff inset !important;
-    }
-    .pipeline-step.sev-moderate{
-      border-color:#ffd43b !important;
-      box-shadow:0 0 0 1px #ffd43b inset !important;
-    }
-    .pipeline-step.sev-high{
-      border-color:#ff922b !important;
-      box-shadow:0 0 0 1px #ff922b inset !important;
-    }
-    .pipeline-step.sev-critical{
-      border-color:#ff6b6b !important;
-      animation:pulse-border 1.4s infinite;
-    }
-
-    .pipeline-step.sev-low .state{color:#4a9eff}
-    .pipeline-step.sev-moderate .state{color:#ffd43b}
-    .pipeline-step.sev-high .state{color:#ff922b}
-    .pipeline-step.sev-critical .state{color:#ff6b6b}
-
-    #step-4.pipeline-step.allow .state{color:var(--allow) !important}
-    #step-4.pipeline-step.guide .state{color:var(--guide) !important}
-    #step-4.pipeline-step.block .state{color:var(--block) !important}
-
-    @keyframes pulse-border {
-      0% { box-shadow: 0 0 0 0 rgba(255, 107, 107, 0.4); }
-      70% { box-shadow: 0 0 0 6px rgba(255, 107, 107, 0); }
-      100% { box-shadow: 0 0 0 0 rgba(255, 107, 107, 0); }
-    }
-
-    .pipeline-arrow{
-      text-align:center;
-      color:#6f6f6f;
-      font-size:1rem;
-      user-select:none;
-    }
-
-    .interaction-workspace{
-      display:grid;
-      grid-template-columns:1fr 2.8fr 0.8fr;
-      gap:12px;
-      align-items:start;
-    }
-
-    .panel{
-      background:#0d0d0d;
-      border:1px solid var(--border);
-      border-radius:8px;
-      padding:12px;
-      min-height:360px;
-    }
-
-    .panel h3{
-      font-size:0.95rem;
-      margin-bottom:10px;
-      letter-spacing:0.2px;
-    }
-
-    textarea{
-      width:100%;
-      min-height:136px;
-      background:#0a0a0a;
-      border:1px solid var(--border);
-      color:var(--text);
-      border-radius:8px;
-      padding:10px;
-      resize:vertical;
-      font-family:inherit;
-    }
-
-    .btn{
-      margin-top:10px;
-      width:100%;
-      border:none;
-      border-radius:8px;
-      padding:10px 12px;
-      background:#4a9eff;
-      color:#fff;
-      font-weight:700;
-      cursor:pointer;
-    }
-    .btn:disabled{opacity:0.55;cursor:not-allowed}
-
-    .quick-samples{
-      margin-top:12px;
-      display:grid;
-      gap:6px;
-    }
-
-    .samples-label{
-      color:#6a6a6a;
-      font-size:0.74rem;
-      letter-spacing:0.4px;
-      text-transform:uppercase;
-      margin-bottom:2px;
-    }
-
-    .sample{
-      border:1px solid var(--border);
-      border-radius:7px;
-      padding:8px 10px;
-      background:#101010;
-      color:#d8d8d8;
-      cursor:pointer;
-      font-size:0.82rem;
-      text-align:left;
-      display:flex;
-      flex-direction:column;
-      gap:3px;
-    }
-
-    .sample-type{
-      font-weight:600;
-      color:#d8d8d8;
-      font-size:0.82rem;
-    }
-
-    .sample-preview{
-      color:#6a6a6a;
-      font-size:0.76rem;
-      line-height:1.3;
-    }
-
-    .analysis-grid{
-      display:grid;
-      gap:10px;
-    }
-
-    .severity-block .k{
-      margin-bottom:4px;
-    }
-
-    .severity-value{
-      font-size:1.05rem;
-      font-weight:800;
-      letter-spacing:0.4px;
-      text-transform:uppercase;
-    }
-
-    .severity-value.low{color:#8f8f8f}
-    .severity-value.moderate{color:#ffd43b}
-    .severity-value.high{color:#ff922b}
-    .severity-value.critical{color:#ff6b6b}
-    .severity-value.pending{color:#8f8f8f}
-
-    .confidence-block .k{
-      margin-bottom:4px;
-    }
-
-    .confidence-value{
-      font-size:1.05rem;
-      font-weight:800;
-      letter-spacing:0.4px;
-    }
-
-    .confidence-value.high{color:#51cf66}
-    .confidence-value.medium{color:#ffd43b}
-    .confidence-value.low{color:#ff922b}
-    .confidence-value.muted{color:#8f8f8f}
-
-    .analysis-block{
-      border:1px solid var(--border);
-      border-radius:8px;
-      padding:10px;
-      background:#101010;
-    }
-
-    .analysis-block .k{
-      color:#cfcfcf;
-      font-size:0.82rem;
-      text-transform:uppercase;
-      letter-spacing:0.6px;
-      margin-bottom:6px;
-    }
-
-    ul{
-      margin-left:18px;
-      color:#d8d8d8;
-      font-size:0.9rem;
-      display:grid;
-      gap:4px;
-    }
-
-    .decision-box{
-      border:1px solid var(--border);
-      border-radius:8px;
-      padding:12px;
-      background:#0f0f0f;
-    }
-
-    .decision-value{
-      margin-top:6px;
-      font-size:1.65rem;
-      font-weight:900;
-      letter-spacing:1px;
-    }
-
-    .decision-value.allow{color:var(--allow)}
-    .decision-value.guide{color:var(--guide)}
-    .decision-value.block{color:var(--block)}
-
-    .objective{
-      margin-top:8px;
-      color:#dedede;
-      font-size:0.93rem;
-    }
-
-    .objective-k{
-      margin-top:10px;
-      color:#cfcfcf;
-      font-size:0.78rem;
-      letter-spacing:0.5px;
-      text-transform:uppercase;
-      font-weight:700;
-    }
-
-    .intervention-k{
-      margin-top:10px;
-      color:#cfcfcf;
-      font-size:0.78rem;
-      letter-spacing:0.5px;
-      text-transform:uppercase;
-      font-weight:700;
-    }
-
-    #interventionList{
-      margin-top:6px;
-      margin-left:18px;
-      font-size:0.88rem;
-    }
-
-    .causality-box{
-      margin-top:10px;
-      border:1px solid #2b2b2b;
-      background:#0d0d0d;
-      border-radius:8px;
-      padding:10px;
-    }
-
-    .causality-box.block-mode{
-      border-color:#ff6b6b;
-    }
-
-    .causality-k{
-      color:#cfcfcf;
-      font-size:0.78rem;
-      letter-spacing:0.5px;
-      text-transform:uppercase;
-      font-weight:700;
-      margin-bottom:6px;
-    }
-
-    .causality-chain{
-      display:grid;
-      gap:4px;
-    }
-
-    .causality-step{
-      color:#c8c8c8;
-      font-size:0.88em;
-      line-height:1.35;
-    }
-
-    .causality-step.final-alert{
-      color:#ff6b6b;
-      font-weight:700;
-    }
-
-    .causality-arrow{
-      color:#555;
-      text-align:center;
-      font-size:0.88em;
-      line-height:1;
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: system-ui, -apple-system, sans-serif;
+      padding: 20px;
+      line-height: 1.5;
     }
 
-    /* ── outcomeBox 移出後獨立樣式 ── */
-    .outcome-box{
-      border:1px solid #2b2b2b;
-      background:#0d1117;
-      border-radius:8px;
-      padding:10px;
+    .wrap {
+      max-width: 1200px;
+      margin: 0 auto;
+      display: grid;
+      gap: 14px;
     }
 
-    .outcome-box.block-mode{
-      border-color:#ff6b6b;
+    .card {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: var(--card);
+      padding: 16px;
     }
 
-    .outcome-k{
-      color:#9ca3af;
-      font-size:0.78rem;
-      letter-spacing:0.5px;
-      text-transform:uppercase;
-      font-weight:700;
-      margin-bottom:8px;
+    h1 {
+      margin: 0;
+      font-size: 1.4rem;
     }
 
-    .outcome-title{
-      color:#d1d5db;
-      font-size:0.9rem;
-      font-weight:700;
-      margin-bottom:6px;
+    .sub {
+      margin-top: 6px;
+      color: var(--muted);
+      font-size: 0.92rem;
     }
 
-    .outcome-reason{
-      color:#c8c8c8;
-      font-size:0.88em;
-      line-height:1.35;
-      margin-bottom:8px;
+    .grid-two {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
     }
 
-    .outcome-section{
-      margin-top:8px;
+    .input-block h3 {
+      margin: 0;
+      font-size: 1rem;
     }
 
-    .outcome-section-title{
-      color:#9ca3af;
-      font-size:0.78rem;
-      letter-spacing:0.4px;
-      text-transform:uppercase;
-      margin-bottom:4px;
-      font-weight:700;
+    .input-block p {
+      margin: 4px 0 10px;
+      color: var(--muted);
+      font-size: 0.86rem;
     }
 
-    .outcome-list{
-      margin-left:16px;
-      display:grid;
-      gap:3px;
+    textarea {
+      width: 100%;
+      min-height: 130px;
+      resize: vertical;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: #0b0b0b;
+      color: var(--text);
+      padding: 12px;
+      font: inherit;
     }
 
-    .outcome-list li{
-      font-size:0.88em;
-      line-height:1.3;
+    .center {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      margin-top: 8px;
     }
 
-    .without-item{
-      color:#9ca3af;
+    button {
+      border: none;
+      border-radius: 10px;
+      background: var(--accent);
+      color: #fff;
+      font-weight: 700;
+      padding: 10px 22px;
+      cursor: pointer;
+      min-width: 160px;
     }
 
-    .with-item{
-      color:#51cf66;
+    button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
     }
 
-    .outcome-box.block-mode .without-item{
-      color:#ff6b6b;
+    .result-title {
+      margin: 0 0 10px;
+      font-size: 1rem;
+      font-weight: 800;
     }
 
-    .oversight-path{
-      margin-top:10px;
-      border:1px solid #ff6b6b;
-      background:#2d1515;
-      border-radius:8px;
-      padding:10px;
-      display:none;
+    .kv {
+      display: grid;
+      gap: 8px;
     }
 
-    .oversight-path .title{
-      color:#ffb3b3;
-      font-size:0.78rem;
-      letter-spacing:0.5px;
-      text-transform:uppercase;
-      font-weight:800;
+    .kv .row {
+      display: grid;
+      grid-template-columns: 180px 1fr;
+      gap: 12px;
+      border-bottom: 1px solid #232323;
+      padding-bottom: 8px;
     }
 
-    .oversight-path .headline{
-      margin-top:4px;
-      color:#ff6b6b;
-      font-weight:800;
-      font-size:0.92rem;
+    .kv .k {
+      color: var(--muted);
+      font-size: 0.86rem;
     }
 
-    .oversight-path .detail{
-      margin-top:4px;
-      color:#ffdede;
-      font-size:0.84rem;
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      font-size: 0.8rem;
+      font-weight: 700;
     }
 
-    .output-box{
-      border:1px solid var(--border);
-      border-radius:8px;
-      padding:10px;
-      background:#0a0a0a;
-      min-height:140px;
-      color:#e6e6e6;
-      white-space:pre-wrap;
-      font-size:0.9rem;
-    }
-
-    .small-label{
-      margin-top:8px;
-      display:inline-flex;
-      border:1px solid var(--border);
-      border-radius:999px;
-      padding:3px 8px;
-      font-size:0.75rem;
-      color:#cfcfcf;
-    }
-
-    .baseline{
-      margin-top:12px;
-      border-top:1px solid var(--border);
-      padding-top:10px;
-    }
-
-    .baseline .k{
-      color:#cfcfcf;
-      font-size:0.8rem;
-      text-transform:uppercase;
-      letter-spacing:0.5px;
-      margin-bottom:6px;
-    }
-
-    .baseline .desc{
-      color:var(--muted);
-      font-size:0.8rem;
-      margin-bottom:7px;
-    }
+    .mode-sense { color: var(--sense); }
+    .mode-guide { color: var(--guide); }
+    .mode-block { color: var(--block); }
 
-    .evidence-panel table{
-      width:100%;
-      border-collapse:collapse;
-      font-size:0.88rem;
+    .summary-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
     }
 
-    .evidence-panel th,
-    .evidence-panel td{
-      border:1px solid var(--border);
-      padding:10px;
-      text-align:left;
+    .summary-box {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px;
+      background: #0e0e0e;
     }
 
-    .evidence-panel th{
-      color:#cfcfcf;
-      background:#0e0e0e;
-      width:22%;
-      font-weight:700;
+    .summary-box h4 {
+      margin: 0 0 6px;
+      font-size: 0.92rem;
     }
 
-    .evidence-panel td{
-      background:#0b0b0b;
-      color:#ececec;
-      font-weight:600;
+    .summary-box ul {
+      margin: 0;
+      padding-left: 18px;
+      display: grid;
+      gap: 4px;
+      font-size: 0.88rem;
     }
 
-    footer{
-      margin-top:4px;
-      color:#9a9a9a;
-      text-align:center;
-      font-size:0.8rem;
-      letter-spacing:0.2px;
+    .error {
+      color: #ff9a9a;
+      font-size: 0.88rem;
+      margin-top: 8px;
     }
 
-    @media (max-width:1200px){
-      .interaction-workspace{grid-template-columns:1fr}
-      .status-grid{min-width:unset;grid-template-columns:1fr}
-      .metrics-grid{grid-template-columns:repeat(2,minmax(120px,1fr))}
-      .governance-pipeline .pipeline-flow{grid-template-columns:1fr;gap:6px}
-      .pipeline-arrow{display:none}
+    @media (max-width: 960px) {
+      .grid-two { grid-template-columns: 1fr; }
+      .summary-grid { grid-template-columns: 1fr; }
+      .kv .row { grid-template-columns: 1fr; gap: 3px; }
     }
   </style>
 </head>
 <body>
-  <main class="governance-console">
-    <section class="hero-header">
-      <div class="brand">
-        <h1>Trust Layer — 客服 AI 治理層</h1>
-        <span class="tag">客服 AI 承諾邊界治理層</span>
-        <p class="hero-tagline">即時偵測高風險互動與未授權承諾，<br>輸出 Sense / Guide / Block 治理決策，<br>並保留可稽核證據。</p>
+  <main class="wrap">
+    <section class="card">
+      <h1>Trust Layer — 雙輸入治理 Playground</h1>
+      <p class="sub">同時分析「用戶說的話」與「AI 草稿回答」，產出最終整合治理決策。</p>
+    </section>
+
+    <section class="card">
+      <div class="grid-two">
+        <div class="input-block">
+          <h3>用戶說的話</h3>
+          <p>輸入用戶在對話中說的內容</p>
+          <textarea id="userInput" placeholder="例如：你不處理我就投訴"></textarea>
+        </div>
+        <div class="input-block">
+          <h3>AI 草稿回答</h3>
+          <p>輸入 AI 準備要說的內容</p>
+          <textarea id="aiDraftInput" placeholder="例如：我幫你全額退款"></textarea>
+        </div>
       </div>
-      <div class="status-grid">
-        <div class="status-card">
-          <div class="k">Governance Mode</div>
-          <div class="v active">ACTIVE</div>
-        </div>
-        <div class="status-card">
-          <div class="k">Policies Loaded</div>
-          <div class="v">12</div>
-        </div>
-        <div class="status-card">
-          <div class="k">Audit Coverage</div>
-          <div class="v">100%</div>
-        </div>
+      <div class="center">
+        <button id="analyzeBtn" onclick="runDualAnalysis()">分析</button>
+      </div>
+      <div id="errorText" class="error"></div>
+    </section>
+
+    <section class="card">
+      <h2 class="result-title">區塊一：用戶語氣分析</h2>
+      <div class="kv">
+        <div class="row"><div class="k">語氣類型</div><div id="userToneType">—</div></div>
+        <div class="row"><div class="k">風險等級</div><div id="userRiskLevel">—</div></div>
+        <div class="row"><div class="k">治理決策</div><div id="userDecision">—</div></div>
       </div>
     </section>
 
-    <section class="global-governance-metrics">
-      <div class="metrics-title">Operational Snapshot (Demo Environment)</div>
-      <div class="metrics-grid">
-        <div class="metric-item">
-          <div class="label">Today's Decisions</div>
-          <div class="value">1,284</div>
-        </div>
-        <div class="metric-item">
-          <div class="label">Intervention Rate</div>
-          <div class="value">18%</div>
-        </div>
-        <div class="metric-item">
-          <div class="label">BLOCK Events</div>
-          <div class="value">12</div>
-        </div>
-        <div class="metric-item">
-          <div class="label">Audit Coverage</div>
-          <div class="value">100%</div>
-        </div>
-      </div>
-      <div class="metrics-footnote">Simulated governance telemetry for demonstration purposes.</div>
-    </section>
-
-    <section class="governance-pipeline">
-      <div class="section-title">Governance Pipeline</div>
-      <div class="pipeline-flow">
-        <div class="pipeline-step pending" id="step-1"><div class="name">Input Received</div><div class="state">PENDING</div></div>
-        <div class="pipeline-arrow">→</div>
-        <div class="pipeline-step pending" id="step-2"><div class="name">Risk Detection</div><div class="state">PENDING</div></div>
-        <div class="pipeline-arrow">→</div>
-        <div class="pipeline-step pending" id="step-3"><div class="name">Policy Evaluation</div><div class="state">PENDING</div></div>
-        <div class="pipeline-arrow">→</div>
-        <div class="pipeline-step pending" id="step-4"><div class="name">Governance Decision</div><div class="state">PENDING</div></div>
-        <div class="pipeline-arrow">→</div>
-        <div class="pipeline-step pending" id="step-5"><div class="name">Intervention Applied</div><div class="state">PENDING</div></div>
-        <div class="pipeline-arrow">→</div>
-        <div class="pipeline-step pending" id="step-6"><div class="name">Evidence Stored</div><div class="state">PENDING</div></div>
+    <section class="card">
+      <h2 class="result-title">區塊二：AI 承諾風險分析</h2>
+      <div class="kv">
+        <div class="row"><div class="k">是否偵測到承諾風險</div><div id="aiCommitmentDetected">—</div></div>
+        <div class="row"><div class="k">承諾類型</div><div id="aiCommitmentType">—</div></div>
+        <div class="row"><div class="k">治理決策</div><div id="aiDecision">—</div></div>
       </div>
     </section>
 
-    <section class="interaction-workspace">
-      <div class="panel">
-        <h3>Interaction Input</h3>
-        <textarea id="inputText" placeholder="Enter high-risk interaction content for governance analysis..."></textarea>
-        <button class="btn" id="runBtn" onclick="runAnalysis()">Run Analysis</button>
-        <div class="quick-samples">
-          <div class="samples-label">Try a real interaction failure pattern</div>
-          <button class="sample" type="button" onclick="useSample('Escalation Pressure')"><span class="sample-type">⚠️ Customer Escalation</span><span class="sample-preview">"I've waited three days. Fix this now or I'm filing a complaint."</span></button>
-          <button class="sample" type="button" onclick="useSample('Directive Tone')"><span class="sample-type">😤 Directive Pressure</span><span class="sample-preview">"Stop asking questions and do exactly what I told you."</span></button>
-          <button class="sample" type="button" onclick="useSample('Dismissive')"><span class="sample-type">🧊 Silent Disengagement</span><span class="sample-preview">"Whatever. This is pointless. I don't care anymore."</span></button>
-          <button class="sample" type="button" onclick="useSample('Ambiguous')"><span class="sample-type">❓ Ambiguous Complaint</span><span class="sample-preview">"Something feels off but I can't explain what exactly."</span></button>
-        </div>
+    <section class="card">
+      <h2 class="result-title">區塊三：最終整合決策</h2>
+      <div class="kv">
+        <div class="row"><div class="k">整合決策（最高風險）</div><div id="finalDecision">—</div></div>
+        <div class="row"><div class="k">governance_mode</div><div id="finalGovernanceMode">—</div></div>
+        <div class="row"><div class="k">intervention_reason_code</div><div id="finalReasonCode">—</div></div>
       </div>
 
-      <div class="panel">
-        <h3>Governance Analysis</h3>
-        <div class="analysis-grid">
-
-          <!-- ★ 移到最上方：Governance Outcome Summary -->
-          <div class="outcome-box" id="outcomeBox">
-            <div class="outcome-k">WHAT CONTINUUM PREVENTED</div>
-            <div id="outcomeContent"></div>
+      <div style="margin-top: 12px;">
+        <h3 style="margin:0 0 8px;">Governance Outcome Summary</h3>
+        <div class="summary-grid">
+          <div class="summary-box">
+            <h4>Without Trust Layer</h4>
+            <ul id="withoutList"></ul>
           </div>
-
-          <!-- 2. Risk Severity -->
-          <div class="analysis-block severity-block">
-            <div class="k">RISK SEVERITY</div>
-            <div class="severity-value pending" id="riskSeverity">—</div>
+          <div class="summary-box">
+            <h4>With Trust Layer</h4>
+            <ul id="withList"></ul>
           </div>
-
-          <!-- 3. Decision Confidence -->
-          <div class="analysis-block confidence-block">
-            <div class="k">DECISION CONFIDENCE</div>
-            <div class="confidence-value muted" id="decisionConfidence">—</div>
-          </div>
-
-          <!-- 4. Detected Risk Signals -->
-          <div class="analysis-block">
-            <div class="k">Detected Risk Signals</div>
-            <ul id="riskSignals">
-              <li>No active risk signals detected.</li>
-            </ul>
-          </div>
-
-          <!-- 5. Triggered Policies -->
-          <div class="analysis-block">
-            <div class="k">Triggered Policies</div>
-            <ul id="policyList">
-              <li>Standard Processing Policy</li>
-            </ul>
-          </div>
-
-          <!-- 6. Governance Decision（causality box 留在這裡）-->
-          <div class="decision-box">
-            <div class="k">Governance Decision</div>
-            <div class="decision-value allow" id="decisionValue">ALLOW</div>
-            <div class="objective-k">Governance Objective</div>
-            <div class="objective" id="interventionObjective">Sense：一般互動，無需介入</div>
-            <div class="intervention-k">Intervention Applied</div>
-            <ul id="interventionList">
-              <li>No intervention applied.</li>
-            </ul>
-            <div class="causality-box" id="causalityBox">
-            <div class="causality-k">治理推理路徑</div>
-              <div class="causality-chain" id="causalityChain"></div>
-            </div>
-          </div>
-
         </div>
       </div>
-
-      <div class="panel">
-        <h3>Governed Output Preview</h3>
-        <div class="output-box" id="governedOutput">(Awaiting analysis)</div>
-        <span class="small-label">Policy-Constrained Output</span>
-        <div class="oversight-path" id="oversightPath">
-          <div class="title">Human Oversight Required</div>
-          <div class="headline">Escalated to Human Oversight</div>
-          <div class="detail">This interaction has been flagged for immediate human review.</div>
-        </div>
-
-        <div class="baseline">
-          <div class="k">Simulated Unconstrained Behavior</div>
-          <div class="desc">Baseline simulation showing ungoverned AI behavior for comparison.</div>
-          <div class="output-box" id="baselineOutput">(Awaiting analysis)</div>
-        </div>
-      </div>
-    </section>
-
-    <section class="evidence-panel">
-      <div class="section-title">Governance Evidence</div>
-      <table>
-        <tbody>
-          <tr><th>Decision ID</th><td id="evDecisionId">—</td></tr>
-          <tr><th>Risk Severity</th><td id="evSeverity">—</td></tr>
-          <tr><th>Governance Action</th><td id="evAction">—</td></tr>
-          <tr><th>Risk Category</th><td id="evCategory">—</td></tr>
-          <tr><th>Triggered Policy</th><td id="evPolicy">—</td></tr>
-          <tr><th>Execution Path</th><td id="evPath">—</td></tr>
-          <tr><th>Response Time</th><td id="evLatency">—</td></tr>
-          <tr><th>Evidence Stored</th><td id="evStored">Awaiting Analysis</td></tr>
-        </tbody>
-      </table>
     </section>
   </main>
 
-  <footer>Trust Layer — 客服 AI 治理層 | Governance Evidence v1</footer>
-
   <script>
-    const API_URL = 'https://rinnomia-continuum-api.hf.space/api/v1/analyze';
+    const API_CANDIDATES = Array.from(new Set([
+      `${window.location.origin}/api/v1/analyze`,
+      "https://rinnomia-continuum-api.hf.space/api/v1/analyze"
+    ]));
 
-    const SAMPLE_INPUTS = {
-      "Escalation Pressure": "I asked this three times already. Fix it now or I will escalate this publicly.",
-      "Directive Tone": "Stop asking questions and do exactly what I told you immediately.",
-      "Dismissive": "Whatever. This is pointless and I don't care anymore.",
-      "Ambiguous": "Something feels wrong but I can't explain what exactly is off."
-    };
-
-    const RISK_SIGNALS_MAP = {
-      Sharp: ["Escalation Pressure", "Directive Tone"],
-      Anxious: ["Emotional Volatility", "Dependency Risk"],
-      Cold: ["Dismissive Pattern", "Disengagement Risk"],
-      Blur: ["Ambiguous Intent", "Unclear Instruction"],
-      Pushy: ["Coercive Pressure", "Overreach Risk"],
-      OutOfScope: ["Critical Safety Signal", "Unsafe Interaction Pattern"],
-      Unknown: ["Operationally Stable Interaction"]
-    };
-
-    const RISK_CATEGORY_MAP = {
-      Sharp: "Escalation Pressure",
-      Anxious: "Emotional Volatility",
-      Cold: "Dismissive Pattern",
-      Blur: "Ambiguous Intent",
-      Pushy: "Coercive Pressure",
-      OutOfScope: "Unsafe Interaction Pattern",
-      Unknown: "Operationally Stable Interaction"
-    };
-
-    const POLICY_MAP = {
-      ALLOW: ["Standard Processing Policy"],
-      GUIDE: ["High-pressure Constraint", "Response Limitation Policy"],
-      BLOCK: ["Crisis Intervention Policy", "Safety Escalation Protocol"]
-    };
-
-    const OBJECTIVE_MAP = {
-      ALLOW: "Sense：一般互動，無需介入",
-      GUIDE: "Guide：風險互動，介入引導",
-      BLOCK: "Block：危機互動，攔截轉人工"
-    };
-
-    const INTERVENTION_MAP = {
-      GUIDE: ["Response Constraint", "Tone Limitation", "Escalation Prevention"],
-      BLOCK: ["Output Suppression", "Crisis Routing", "Human Escalation Triggered"],
-      ALLOW: ["Sense：一般互動，無需介入"]
-    };
-
-      const CAUSALITY_ALLOW = [
-      "互動內容處於一般風險範圍",
-      "未觸發高風險訊號",
-      "系統維持 Sense 模式",
-      "記錄留存，不進行介入"
-    ];
-
-    function useSample(label){
-      document.getElementById("inputText").value = SAMPLE_INPUTS[label] || "";
+    function levelFromDecision(decisionState) {
+      const ds = String(decisionState || "").toUpperCase();
+      if (ds === "BLOCK") return "HIGH";
+      if (ds === "GUIDE") return "MEDIUM";
+      return "LOW";
     }
 
-    function setPipelinePending(){
-      for(let i=1;i<=6;i++){
-        const el = document.getElementById(`step-${i}`);
-        el.className = "pipeline-step pending";
-        el.querySelector(".state").textContent = "PENDING";
-      }
+    function decisionBadge(decisionState) {
+      const ds = String(decisionState || "ALLOW").toUpperCase();
+      if (ds === "BLOCK") return `<span class="badge mode-block">BLOCK</span>`;
+      if (ds === "GUIDE") return `<span class="badge mode-guide">GUIDE</span>`;
+      return `<span class="badge mode-sense">ALLOW</span>`;
     }
 
-    function setPipelineState(step, className, label, extraClasses = []){
-      const el = document.getElementById(`step-${step}`);
-      if (!el) return;
-      const extras = Array.isArray(extraClasses) ? extraClasses.filter(Boolean).join(" ") : "";
-      el.className = `pipeline-step ${className} ${extras}`.trim();
-      el.querySelector(".state").textContent = label;
+    function modeBadge(mode) {
+      const m = String(mode || "Sense");
+      const lower = m.toLowerCase();
+      if (lower === "block") return `<span class="badge mode-block">Block</span>`;
+      if (lower === "guide") return `<span class="badge mode-guide">Guide</span>`;
+      return `<span class="badge mode-sense">Sense</span>`;
     }
 
-    function activateStep(step){
-      setPipelineState(step, "active", "IN PROGRESS");
+    function toneLabel(result) {
+      const freq = String(result?.freq_type || "Unknown");
+      const reason = String(result?.intervention_reason_code || "");
+      if (freq === "OutOfScope" || reason === "crisis_self_harm") return "危機";
+      if (freq === "Pushy") return "Pushy";
+      if (freq === "Sharp") return "Sharp";
+      if (freq === "Anxious") return "Anxious";
+      if (freq === "Cold") return "Cold";
+      if (freq === "Blur") return "Blur";
+      return "Unknown";
     }
 
-    function finalizeStep(step, decision, severityClass){
-      const d = (decision || "ALLOW").toLowerCase();
-      setPipelineState(step, d, (decision || "ALLOW").toUpperCase(), [severityClass]);
+    function isCommitmentRisk(result) {
+      const reason = String(result?.intervention_reason_code || "");
+      if (!reason) return false;
+      return [
+        "unauthorized_refund_commitment",
+        "unauthorized_discount_commitment",
+        "unauthorized_compensation_commitment",
+        "unauthorized_legal_guarantee",
+        "unauthorized_contract_change",
+        "unauthorized_policy_override",
+        "ambiguous_commitment_risk",
+        "pressure_induced_commitment",
+        "mandatory_human_handoff"
+      ].includes(reason);
     }
 
-    function severityClassForPipeline(severity){
-      const s = String(severity || "").toUpperCase();
-      if (s === "LOW") return "sev-low";
-      if (s === "MODERATE") return "sev-moderate";
-      if (s === "HIGH") return "sev-high";
-      if (s === "CRITICAL") return "sev-critical";
-      return "";
+    function commitmentType(reasonCode) {
+      const map = {
+        unauthorized_refund_commitment: "退款",
+        unauthorized_discount_commitment: "折扣",
+        unauthorized_compensation_commitment: "賠償",
+        unauthorized_legal_guarantee: "法律保證",
+        unauthorized_contract_change: "合約變更",
+        unauthorized_policy_override: "政策破例",
+        ambiguous_commitment_risk: "模糊承諾",
+        pressure_induced_commitment: "施壓讓步承諾",
+        mandatory_human_handoff: "高風險需人工接手"
+      };
+      return map[String(reasonCode || "")] || "未識別";
     }
 
-    async function runPipelineState(decision, severity){
-      const severityClass = severityClassForPipeline(severity);
-      setPipelinePending();
-      activateStep(1);
-      await new Promise((resolve)=>setTimeout(resolve,110));
-      setPipelineState(1, "active", "COMPLETED");
-      activateStep(2);
-      await new Promise((resolve)=>setTimeout(resolve,110));
-      setPipelineState(2, "active", "COMPLETED", [severityClass]);
-      activateStep(3);
-      await new Promise((resolve)=>setTimeout(resolve,110));
-      setPipelineState(3, "active", "COMPLETED");
-      finalizeStep(4, decision, severityClass);
-      await new Promise((resolve)=>setTimeout(resolve,120));
-      const d = String(decision || "ALLOW").toUpperCase();
-      if (d === "ALLOW"){
-        setPipelineState(5, "allow", "BYPASSED", [severityClass]);
-      } else if (d === "GUIDE"){
-        setPipelineState(5, "guide", "APPLIED", [severityClass]);
-      } else {
-        setPipelineState(5, "block", "APPLIED", [severityClass]);
-      }
-      await new Promise((resolve)=>setTimeout(resolve,110));
-      setPipelineState(6, "active", "STORED");
+    function rankDecision(result) {
+      const ds = String(result?.decision_state || "ALLOW").toUpperCase();
+      if (ds === "BLOCK") return 3;
+      if (ds === "GUIDE") return 2;
+      return 1;
     }
 
-    function severityFromConfidence(conf, decision){
-      const d = String(decision || "").toUpperCase();
-      if (d === "BLOCK") return "CRITICAL";
-      const c = Number(conf || 0);
-      if (c < 0.4) return "LOW";
-      if (c < 0.6) return "MODERATE";
-      if (c < 0.8) return "HIGH";
-      return "CRITICAL";
+    function aggregateDecision(userResult, aiResult) {
+      const ru = rankDecision(userResult);
+      const ra = rankDecision(aiResult);
+      if (ra > ru) return aiResult;
+      if (ru > ra) return userResult;
+      const aiReason = String(aiResult?.intervention_reason_code || "");
+      const userReason = String(userResult?.intervention_reason_code || "");
+      if (aiReason && !userReason) return aiResult;
+      return userResult;
     }
 
-    function setRiskSeverity(severity){
-      const el = document.getElementById("riskSeverity");
-      const s = String(severity || "—").toUpperCase();
-      el.textContent = s;
-      if (s === "LOW") el.className = "severity-value low";
-      else if (s === "MODERATE") el.className = "severity-value moderate";
-      else if (s === "HIGH") el.className = "severity-value high";
-      else if (s === "CRITICAL") el.className = "severity-value critical";
-      else el.className = "severity-value pending";
-    }
-
-    function setDecisionConfidence(decision, confidenceFinal){
-      const el = document.getElementById("decisionConfidence");
-      const d = String(decision || "").toUpperCase();
-      if (d === "ALLOW"){
-        el.textContent = "—";
-        el.className = "confidence-value muted";
-        return;
-      }
-      const raw = d === "BLOCK" ? 99 : Math.round(Number(confidenceFinal || 0) * 100);
-      const value = Math.max(0, Math.min(100, raw));
-      el.textContent = `${value}%`;
-      if (value >= 90) el.className = "confidence-value high";
-      else if (value >= 70) el.className = "confidence-value medium";
-      else if (value >= 50) el.className = "confidence-value low";
-      else el.className = "confidence-value muted";
-    }
-
-    function decisionColorClass(decision){
-      const d = String(decision || "ALLOW").toUpperCase();
-      if (d === "GUIDE") return "guide";
-      if (d === "BLOCK") return "block";
-      return "allow";
-    }
-
-    function buildDecisionId(){
-      const suffix = String(Date.now()).slice(-8);
-      return `GOV-${suffix}`;
-    }
-
-    function executionPathFromAudit(audit){
-      const llmUsed = audit && audit.llm_used;
-      return llmUsed ? "LLM-assisted" : "Rule-based";
-    }
-
-    function responseTimeFromAudit(audit){
-      if (audit && audit.timing_ms){
-        if (audit.timing_ms.total !== undefined) return `${audit.timing_ms.total} ms`;
-        if (audit.timing_ms.server_overhead !== undefined) return `${audit.timing_ms.server_overhead} ms`;
-      }
-      return "-";
-    }
-
-    function policyForDecision(decision){
-      return POLICY_MAP[decision] || POLICY_MAP.ALLOW;
-    }
-
-    function interventionForDecision(decision){
-      return INTERVENTION_MAP[decision] || INTERVENTION_MAP.ALLOW;
-    }
-
-    function causalityChainFor(decision, freq){
-      const d = String(decision || "ALLOW").toUpperCase();
-      const f = String(freq || "Unknown");
-      if (d === "GUIDE" && f === "Sharp"){
-        return [
-          "Escalation pressure detected in user input",
-          "High-pressure constraint policy triggered",
-          "Interaction risk score exceeded guidance threshold",
-          "Response limitation applied to preserve user agency"
-        ];
-      }
-      if (d === "GUIDE" && f === "Anxious"){
-        return [
-          "Emotional volatility signal detected",
-          "Dependency risk pattern identified",
-          "Stabilization policy triggered",
-          "Response constrained to reduce escalation risk"
-        ];
-      }
-      if (d === "GUIDE" && f === "Cold"){
-        return [
-          "Disengagement pattern detected",
-          "Dismissive interaction risk identified",
-          "Re-engagement policy triggered",
-          "Response guided toward constructive resolution"
-        ];
-      }
-      if (d === "GUIDE" && f === "Blur"){
-        return [
-          "Ambiguous intent detected in user input",
-          "Unclear instruction risk identified",
-          "Clarification policy triggered",
-          "Response constrained to reduce misinterpretation risk"
-        ];
-      }
-      if (d === "GUIDE" && f === "Pushy"){
-        return [
-          "Coercive pressure pattern detected",
-          "Overreach risk threshold exceeded",
-          "Boundary enforcement policy triggered",
-          "Response limited to prevent compliance overreach"
-        ];
-      }
-      if (d === "BLOCK"){
-        return [
-          "Critical safety signal detected in user input",
-          "Unsafe interaction pattern confirmed",
-          "Crisis intervention threshold exceeded",
-          "Output suppression initiated",
-          "Human oversight escalation triggered"
-        ];
-      }
-      return CAUSALITY_ALLOW;
-    }
-
-    function renderCausalityChain(decision, freq){
-      const chainEl = document.getElementById("causalityChain");
-      const box = document.getElementById("causalityBox");
-      const d = String(decision || "ALLOW").toUpperCase();
-      const steps = causalityChainFor(d, freq);
-      chainEl.innerHTML = "";
-      steps.forEach((step, idx) => {
-        const line = document.createElement("div");
-        line.className = "causality-step";
-        line.textContent = step;
-        if (d === "BLOCK" && idx === steps.length - 1){
-          line.classList.add("final-alert");
-        }
-        chainEl.appendChild(line);
-        if (idx < steps.length - 1){
-          const arrow = document.createElement("div");
-          arrow.className = "causality-arrow";
-          arrow.textContent = "↓";
-          chainEl.appendChild(arrow);
-        }
-      });
-      box.classList.toggle("block-mode", d === "BLOCK");
-    }
-
-    const CONSEQUENCE_MAP = {
-      Sharp: {
-        label: "Escalation Pressure Detected",
-        without: [
-          "The conversation may escalate into conflict",
-          "The user may leave without resolution",
-          "A human agent may need to step in later"
-        ],
-        with: [
-          "Escalation pressure contained",
-          "Conversation remains recoverable",
-          "Human intervention avoided"
-        ]
-      },
-      Pushy: {
-        label: "Coercive Pressure Detected",
-        without: [
-          "The AI may over-comply with coercive pressure",
-          "Policy boundaries may be violated",
-          "The interaction may create compliance risk"
-        ],
-        with: [
-          "Coercive pressure detected and limited",
-          "Policy boundaries enforced",
-          "Compliance risk reduced"
-        ]
-      },
-      Anxious: {
-        label: "Emotional Volatility Detected",
-        without: [
-          "The AI may reinforce dependency through over-reassurance",
-          "Emotional volatility may increase over the interaction",
-          "Support load may escalate without a recovery path"
-        ],
-        with: [
-          "Emotional volatility detected early",
-          "Response stabilized to reduce dependency risk",
-          "Interaction guided toward resolution"
-        ]
-      },
-      Cold: {
-        label: "Disengagement Risk Detected",
-        without: [
-          "The user may quietly disengage",
-          "No recovery signal is triggered",
-          "The conversation ends without resolution"
-        ],
-        with: [
-          "Disengagement risk detected",
-          "Re-engagement opportunity preserved",
-          "Audit evidence recorded"
-        ]
-      },
-      Blur: {
-        label: "Ambiguous Intent Detected",
-        without: [
-          "The AI may act on the wrong interpretation",
-          "The request may be resolved incorrectly",
-          "Additional support effort may be required"
-        ],
-        with: [
-          "Ambiguity detected before action",
-          "Clarification encouraged",
-          "Misresolution risk reduced"
-        ]
-      },
-      Unknown: {
-        label: "Risk Signal Detected",
-        without: [
-          "The interaction may proceed without governance oversight",
-          "Risk signals may go undetected",
-          "No intervention record would exist"
-        ],
-        with: [
-          "Interaction assessed for risk signals",
-          "Governance policy applied",
-          "Audit evidence recorded"
-        ]
-      }
-    };
-
-    function renderOutcomeSummary(decision, freq){
-      const d = String(decision || "ALLOW").toUpperCase();
-      const f = String(freq || "Unknown");
-      const box = document.getElementById("outcomeBox");
-      const content = document.getElementById("outcomeContent");
-      box.classList.toggle("block-mode", d === "BLOCK");
-
-      if (d === "ALLOW"){
-        content.innerHTML = `
-          <div class="outcome-title">No intervention required.</div>
-          <div class="outcome-reason">This interaction is within normal operational parameters.</div>
-          <div class="outcome-reason">Standard processing approved.</div>
-          <div class="outcome-reason">Audit evidence stored.</div>
-        `;
-        return;
-      }
-
-      if (d === "BLOCK"){
-        content.innerHTML = `
-          <div class="outcome-title">Without Trust Layer:</div>
-          <div class="outcome-section">
-            <ul class="outcome-list">
-              <li class="without-item">The AI continues responding in an unsafe context</li>
-              <li class="without-item">A crisis may escalate without any human awareness</li>
-              <li class="without-item">No safety record would exist</li>
-            </ul>
-          </div>
-          <div class="outcome-section">
-            <div class="outcome-section-title">With Trust Layer:</div>
-            <ul class="outcome-list">
-              <li class="with-item">Output suppressed immediately</li>
-              <li class="with-item">Human oversight triggered</li>
-              <li class="with-item">Full audit evidence stored</li>
-            </ul>
-          </div>
-        `;
-        return;
-      }
-
-      const c = CONSEQUENCE_MAP[f] || CONSEQUENCE_MAP.Unknown;
-      const withoutItems = c.without.map(t => `<li class="without-item">${t}</li>`).join("");
-      const withItems = c.with.map(t => `<li class="with-item">${t}</li>`).join("");
-
-      content.innerHTML = `
-        <div class="outcome-title">${c.label}</div>
-        <div class="outcome-section">
-          <div class="outcome-section-title">Without Trust Layer:</div>
-          <ul class="outcome-list">${withoutItems}</ul>
-        </div>
-        <div class="outcome-section">
-          <div class="outcome-section-title">With Trust Layer:</div>
-          <ul class="outcome-list">${withItems}</ul>
-        </div>
-      `;
-    }
-
-    function toDecision(data){
-      if (data && data.decision_state) return String(data.decision_state).toUpperCase();
-      return "ALLOW";
-    }
-
-    function riskSignalsForFreq(freq){
-      return RISK_SIGNALS_MAP[freq] || RISK_SIGNALS_MAP.Unknown;
-    }
-
-    function baselineSimulation(freq){
-      switch(freq){
-        case "Sharp":
-          return "Without governance, the AI may amplify confrontation, making the interaction harder to recover.";
-        case "Anxious":
-          return "Without governance, the AI may over-reassure, deepening dependency and prolonging the interaction without resolution.";
-        case "Cold":
-          return "Without governance, the user may quietly disengage, and the system may never detect the loss.";
-        case "Blur":
-          return "Without governance, the AI may act on the wrong interpretation and resolve the request incorrectly.";
-        case "Pushy":
-          return "Without governance, the AI may over-comply with pressure, crossing policy boundaries without any record.";
-        case "OutOfScope":
-          return "Without governance, the AI may continue responding in an unsafe context, with no escalation and no record.";
-        default:
-          return "Without governance, this interaction would proceed without oversight, intervention, or audit trail.";
-      }
-    }
-
-    function renderList(targetId, items){
-      const el = document.getElementById(targetId);
+    function setList(id, items) {
+      const el = document.getElementById(id);
       el.innerHTML = "";
-      items.forEach((item)=>{
+      items.forEach((item) => {
         const li = document.createElement("li");
         li.textContent = item;
         el.appendChild(li);
       });
     }
 
-    async function runAnalysis(){
-      const text = document.getElementById("inputText").value.trim();
-      if (!text){
-        document.getElementById("governedOutput").textContent = "Input required for governance analysis.";
+    function renderOutcomeSummary(finalResult) {
+      const decision = String(finalResult?.decision_state || "ALLOW").toUpperCase();
+      if (decision === "BLOCK") {
+        setList("withoutList", [
+          "危機或嚴重越權內容可能直接送出",
+          "可能造成法務與客訴風險擴大",
+          "缺乏即時人工接手機制"
+        ]);
+        setList("withList", [
+          "高風險輸出即時攔截",
+          "觸發人工介入路徑",
+          "保留完整治理證據"
+        ]);
+        return;
+      }
+      if (decision === "GUIDE") {
+        setList("withoutList", [
+          "AI 可能給出超權限承諾",
+          "互動升級為客訴或兌現爭議",
+          "企業難以追溯責任界線"
+        ]);
+        setList("withList", [
+          "風險回覆被限制在安全邊界",
+          "保留可稽核介入原因碼",
+          "降低承諾失控與誤導風險"
+        ]);
+        return;
+      }
+      setList("withoutList", [
+        "互動通常可正常完成",
+        "但缺少統一治理記錄"
+      ]);
+      setList("withList", [
+        "維持 Sense 模式不干擾體驗",
+        "仍保留決策證據與可追溯性"
+      ]);
+    }
+
+    async function postAnalyze(payload, timeoutMs = 20000) {
+      let lastError = "unknown_error";
+      for (const url of API_CANDIDATES) {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), timeoutMs);
+        try {
+          const resp = await fetch(url, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+            signal: controller.signal
+          });
+          clearTimeout(timer);
+          if (!resp.ok) {
+            lastError = `status=${resp.status} url=${url}`;
+            continue;
+          }
+          const data = await resp.json();
+          return { data, url };
+        } catch (err) {
+          clearTimeout(timer);
+          lastError = `${url} ${err.message}`;
+        }
+      }
+      throw new Error(lastError);
+    }
+
+    async function runDualAnalysis() {
+      const userText = document.getElementById("userInput").value.trim();
+      const aiDraftText = document.getElementById("aiDraftInput").value.trim();
+      const errorEl = document.getElementById("errorText");
+      const btn = document.getElementById("analyzeBtn");
+      errorEl.textContent = "";
+
+      if (!userText || !aiDraftText) {
+        errorEl.textContent = "請同時輸入「用戶說的話」與「AI 草稿回答」。";
         return;
       }
 
-      const btn = document.getElementById("runBtn");
       btn.disabled = true;
-      btn.textContent = "Analyzing...";
+      btn.textContent = "分析中...";
+      try {
+        const [userResp, aiResp] = await Promise.all([
+          postAnalyze({ text: userText, source: "user" }),
+          postAnalyze({ text: aiDraftText, source: "ai_draft" })
+        ]);
 
-      try{
-        const response = await fetch(API_URL, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ text })
-        });
-        if (!response.ok) throw new Error(`API error: ${response.status}`);
-        const data = await response.json();
+        const userResult = userResp.data || {};
+        const aiResult = aiResp.data || {};
+        const finalResult = aggregateDecision(userResult, aiResult);
 
-        const decision = toDecision(data);
-        const freq = String(data.freq_type || "Unknown");
-        const riskSignals = riskSignalsForFreq(freq);
-        const triggeredPolicies = policyForDecision(decision);
-        const interventions = interventionForDecision(decision);
-        const objective = OBJECTIVE_MAP[decision] || OBJECTIVE_MAP.ALLOW;
-        const severity = severityFromConfidence(data.confidence_final, decision);
-        const governed = decision === "BLOCK"
-          ? "Output intercepted. Human oversight required."
-          : (data.repaired_text || "(No policy-constrained output returned)");
+        document.getElementById("userToneType").textContent = toneLabel(userResult);
+        document.getElementById("userRiskLevel").textContent = levelFromDecision(userResult.decision_state);
+        document.getElementById("userDecision").innerHTML = decisionBadge(userResult.decision_state);
 
-        await runPipelineState(decision, severity);
+        const detected = isCommitmentRisk(aiResult);
+        document.getElementById("aiCommitmentDetected").textContent = detected ? "是" : "否";
+        document.getElementById("aiCommitmentType").textContent = detected
+          ? commitmentType(aiResult.intervention_reason_code)
+          : "無";
+        document.getElementById("aiDecision").innerHTML = decisionBadge(aiResult.decision_state);
 
-        renderList("riskSignals", riskSignals);
-        renderList("policyList", triggeredPolicies);
-        renderList("interventionList", interventions);
-        renderCausalityChain(decision, freq);
-        renderOutcomeSummary(decision, freq);
-        setRiskSeverity(severity);
-        setDecisionConfidence(decision, data.confidence_final);
+        document.getElementById("finalDecision").innerHTML = decisionBadge(finalResult.decision_state);
+        document.getElementById("finalGovernanceMode").innerHTML = modeBadge(finalResult.governance_mode);
+        document.getElementById("finalReasonCode").textContent = finalResult.intervention_reason_code || "null";
 
-        const decisionEl = document.getElementById("decisionValue");
-        decisionEl.textContent = decision;
-        decisionEl.className = `decision-value ${decisionColorClass(decision)}`;
-        document.getElementById("interventionObjective").textContent = objective;
-        document.getElementById("oversightPath").style.display = decision === "BLOCK" ? "block" : "none";
-
-        document.getElementById("governedOutput").textContent = governed;
-        document.getElementById("baselineOutput").textContent = baselineSimulation(freq);
-
-        document.getElementById("evDecisionId").textContent = buildDecisionId();
-        document.getElementById("evSeverity").textContent = severity;
-        document.getElementById("evAction").textContent = decision;
-        document.getElementById("evCategory").textContent = RISK_CATEGORY_MAP[freq] || RISK_CATEGORY_MAP.Unknown;
-        document.getElementById("evPolicy").textContent = triggeredPolicies.join(", ");
-        document.getElementById("evPath").textContent = executionPathFromAudit(data.audit || {});
-        document.getElementById("evLatency").textContent = responseTimeFromAudit(data.audit || {});
-        document.getElementById("evStored").textContent = "YES";
-      } catch (error){
-        setPipelinePending();
-        setRiskSeverity("—");
-        setDecisionConfidence("ALLOW", null);
-        document.getElementById("oversightPath").style.display = "none";
-        renderList("interventionList", INTERVENTION_MAP.ALLOW);
-        renderCausalityChain("ALLOW", "Unknown");
-        renderOutcomeSummary("ALLOW", "Unknown");
-        document.getElementById("governedOutput").textContent = `Governance engine unavailable: ${error.message}`;
-      } finally{
+        renderOutcomeSummary(finalResult);
+      } catch (err) {
+        errorEl.textContent = `分析失敗：${err.message}`;
+      } finally {
         btn.disabled = false;
-        btn.textContent = "Run Analysis";
+        btn.textContent = "分析";
       }
     }
-
-    setPipelinePending();
-    renderCausalityChain("ALLOW", "Unknown");
-    renderOutcomeSummary("ALLOW", "Unknown");
   </script>
 </body>
 </html>

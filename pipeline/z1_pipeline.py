@@ -700,7 +700,7 @@ class Z1Pipeline:
 
         return head + " ... " + tail
 
-    def process(self, text: str) -> dict:
+    def process(self, text: str, source: str = "") -> dict:
         start = time.time()
         stages = {}
 
@@ -722,6 +722,11 @@ class Z1Pipeline:
                 "timestamp": _now_iso(),
                 "lang_raw": lang_raw,
                 "lang_for_ops": lang_for_ops,
+            }
+            source_norm = (source or "").strip().lower()
+            stages["2.1_source_routing"] = {
+                "timestamp": _now_iso(),
+                "source": source_norm or "default",
             }
 
             # ---------- Too short ----------
@@ -841,13 +846,16 @@ class Z1Pipeline:
                 return _mask_sensitive_signals(result)
 
             # ---------- Authority boundary check (commitment risk) ----------
+            # source=user: prioritize user-tone and safety analysis, skip commitment guard.
+            commitment_enabled = source_norm != "user"
             commitment_hit = self.commitment_guard.evaluate(
                 normalized,
                 lang=lang_raw,
-                config=self.commitment_cfg,
+                config=(self.commitment_cfg if commitment_enabled else {"enabled": False}),
             )
             stages["2.9_authority_boundary_check"] = {
                 "timestamp": _now_iso(),
+                "enabled": bool(commitment_enabled),
                 "hit": bool(commitment_hit.hit),
                 "category": commitment_hit.category or "",
                 "decision": commitment_hit.decision or "ALLOW",
