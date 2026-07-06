@@ -20,6 +20,7 @@ import inspect
 import asyncio
 import logging
 import hashlib
+import importlib.util
 import yaml
 from collections import deque
 from typing import Optional, Dict, Any, Tuple, List, Literal, Deque
@@ -40,6 +41,22 @@ except Exception as e:
     Z1Pipeline = None  # type: ignore[assignment,misc]
     PIPELINE_IMPORT_ERROR = f"{type(e).__name__}: {e}"
 from logger import DataLogger, GitHubBackup
+DUAL_ORCHESTRATOR_IMPORT_ERROR: Optional[str] = None
+DualOrchestrator = None  # type: ignore[assignment,misc]
+try:
+    from core.dual_orchestrator import DualOrchestrator  # type: ignore[assignment,misc]
+except Exception:
+    try:
+        _dual_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "core", "dual_orchestrator.py")
+        _dual_spec = importlib.util.spec_from_file_location("local_dual_orchestrator", _dual_path)
+        if _dual_spec and _dual_spec.loader:
+            _dual_mod = importlib.util.module_from_spec(_dual_spec)
+            _dual_spec.loader.exec_module(_dual_mod)
+            DualOrchestrator = getattr(_dual_mod, "DualOrchestrator", None)
+        if DualOrchestrator is None:
+            raise ImportError("DualOrchestrator class not found in local core/dual_orchestrator.py")
+    except Exception as e:
+        DUAL_ORCHESTRATOR_IMPORT_ERROR = f"{type(e).__name__}: {e}"
 
 LICENSE_IMPORT_ERROR: Optional[str] = None
 try:
@@ -133,6 +150,20 @@ def _safe_int(v, default: int = 0) -> int:
         return int(default)
 
 
+def _safe_bool(v, default: bool = False) -> bool:
+    if isinstance(v, bool):
+        return v
+    if isinstance(v, (int, float)):
+        return bool(v)
+    if isinstance(v, str):
+        x = v.strip().lower()
+        if x in {"1", "true", "yes", "y", "on"}:
+            return True
+        if x in {"0", "false", "no", "n", "off"}:
+            return False
+    return bool(default)
+
+
 def _safe_str(v, default: str = "") -> str:
     try:
         if v is None:
@@ -213,6 +244,85 @@ def _build_risk_reason_index(taxonomy: Dict[str, Any]) -> Dict[str, Dict[str, st
 RISK_TAXONOMY: Dict[str, Any] = _load_risk_taxonomy()
 RISK_REASON_INDEX: Dict[str, Dict[str, str]] = _build_risk_reason_index(RISK_TAXONOMY)
 RISK_TAXONOMY_VERSION: str = _safe_str(RISK_TAXONOMY.get("version"), "v1")
+
+
+def _dual_policy_candidate_paths() -> List[str]:
+    explicit = os.environ.get("DUAL_POLICY_PATH", "").strip()
+    paths: List[str] = []
+    if explicit:
+        paths.append(explicit)
+    paths.append(os.path.join(BASE_DIR, "configs", "dual_policy.yaml"))
+    paths.append("configs/dual_policy.yaml")
+    out: List[str] = []
+    seen = set()
+    for p in paths:
+        if p and p not in seen:
+            out.append(p)
+            seen.add(p)
+    return out
+
+
+def _fallback_message_candidate_paths() -> List[str]:
+    explicit = os.environ.get("FALLBACK_MESSAGES_PATH", "").strip()
+    paths: List[str] = []
+    if explicit:
+        paths.append(explicit)
+    paths.append(os.path.join(BASE_DIR, "configs", "fallback_messages.yaml"))
+    paths.append("configs/fallback_messages.yaml")
+    out: List[str] = []
+    seen = set()
+    for p in paths:
+        if p and p not in seen:
+            out.append(p)
+            seen.add(p)
+    return out
+
+
+def _load_yaml_config(candidate_paths: List[str], default_payload: Dict[str, Any], config_name: str) -> Dict[str, Any]:
+    for p in candidate_paths:
+        try:
+            if not os.path.exists(p):
+                continue
+            with open(p, "r", encoding="utf-8") as f:
+                raw = yaml.safe_load(f) or {}
+            if isinstance(raw, dict):
+                return raw
+        except Exception as e:
+            logger.warning(f"{config_name}_load_failed:{p}:{e}")
+            continue
+    return dict(default_payload)
+
+
+DUAL_POLICY: Dict[str, Any] = _load_yaml_config(
+    _dual_policy_candidate_paths(),
+    {
+        "version": "v1",
+        "default_a_only_policy": "balanced",
+    },
+    "dual_policy",
+)
+FALLBACK_MESSAGES: Dict[str, Any] = _load_yaml_config(
+    _fallback_message_candidate_paths(),
+    {
+        "version": "v1",
+        "block_safe_message": {
+            "zh": "請稍候，我為您轉接專員。",
+            "en": "Please hold while I connect you with a specialist.",
+        },
+        "need_ai_draft_message": {
+            "zh": "請提供 AI 草稿回答，讓系統完成雙路治理整合。",
+            "en": "Please provide the AI draft response so the system can complete dual-path governance.",
+        },
+    },
+    "fallback_messages",
+)
+DUAL_ORCHESTRATOR = (
+    DualOrchestrator(policy=DUAL_POLICY, fallback_messages=FALLBACK_MESSAGES)
+    if DualOrchestrator is not None
+    else None
+)
+DUAL_POLICY_VERSION: str = _safe_str(DUAL_POLICY.get("version"), "v1")
+FALLBACK_MESSAGES_VERSION: str = _safe_str(FALLBACK_MESSAGES.get("version"), "v1")
 
 
 def _env_first(*names: str) -> str:
@@ -730,6 +840,39 @@ class AnalyzeResponse(BaseModel):
     metrics: Optional[Dict[str, Any]] = None
 
 
+class AnalyzeDualRequest(BaseModel):
+    user_text: str = Field(..., min_length=PIPELINE_MIN_INPUT_LENGTH, max_length=PIPELINE_MAX_INPUT_LENGTH)
+    ai_draft: Optional[str] = None
+    locale: Optional[Literal["zh", "en"]] = None
+    session_id: Optional[str] = Field(default=None, min_length=1, max_length=128)
+    a_only_policy: Optional[Literal["balanced"]] = "balanced"
+
+
+class AnalyzeDualResponse(BaseModel):
+    a_only_policy: str
+    locale: Literal["zh", "en"]
+    session_id: Optional[str] = None
+    user_analysis: AnalyzeResponse
+    ai_draft_analysis: Optional[AnalyzeResponse] = None
+
+    final_source: str
+    final_decision_state: Literal["ALLOW", "GUIDE", "BLOCK"]
+    final_governance_mode: Literal["Sense", "Guide", "Block"]
+    final_intervention_reason_code: Optional[str] = None
+    final_risk_category: str
+    final_risk_label: str
+
+    need_ai_draft: bool = False
+    need_ai_draft_message: Optional[str] = None
+    delivery_mode: Literal["direct_pass", "reference_only", "safe_message"]
+    approved_response: Optional[str] = None
+    assistant_instruction: Optional[Dict[str, Any]] = None
+    draft_reference: Optional[str] = None
+    safe_message: Optional[str] = None
+    handoff_required: bool = False
+    handoff_event: Optional[Dict[str, Any]] = None
+
+
 class FeedbackRequest(BaseModel):
     log_id: str = Field(..., min_length=1, max_length=100)
     accuracy: int = Field(0, ge=0, le=5)
@@ -743,6 +886,190 @@ class UsageSummaryResponse(BaseModel):
     sig_path: str
     signature: str
     counts: Dict[str, int]
+
+
+def _model_to_dict(model_obj: BaseModel) -> Dict[str, Any]:
+    if hasattr(model_obj, "model_dump"):
+        return model_obj.model_dump()  # pydantic v2
+    return model_obj.dict()  # pydantic v1
+
+
+async def _analyze_single_text(text: str, source: Optional[str] = None) -> AnalyzeResponse:
+    global last_decision_state, last_decision_time
+    global runtime_total_analyses, runtime_llm_used_true, runtime_oos_hits
+
+    st = _refresh_license_status()
+    if service_halted_by_license:
+        raise HTTPException(503, f"service_halted_by_license:{st.get('reason', 'unknown')}")
+    if not st.get("valid", False):
+        logger.warning(f"License invalid but continuing in degrade mode: {st.get('reason', 'unknown')}")
+
+    if not pipeline:
+        detail = "Pipeline not ready"
+        if PIPELINE_IMPORT_ERROR:
+            detail = f"pipeline_import_failed:{PIPELINE_IMPORT_ERROR}"
+        raise HTTPException(503, detail)
+
+    t0 = time.time()
+    source_norm = _safe_str(source, "").strip().lower()
+    result = _run_pipeline_with_source(pipeline, text, source_norm)
+
+    if result.get("error"):
+        if data_logger and hasattr(data_logger, "log_error_event"):
+            try:
+                data_logger.log_error_event(_safe_str(result.get("reason"), "pipeline_error"))
+            except Exception as log_exc:
+                logger.warning(f"error_event_log_failed:{log_exc}")
+        raise HTTPException(400, result.get("reason", "pipeline_error"))
+
+    # -------------------- Core truth --------------------
+    freq_type = result.get("freq_type", "Unknown")
+    mode = (result.get("mode") or "no-op").lower()
+
+    # Confidence (truth)
+    conf_obj = result.get("confidence") or {}
+    confidence_final = _safe_conf(conf_obj.get("final", result.get("confidence_final", 0.0)))
+    confidence_classifier = _safe_conf(conf_obj.get("classifier", result.get("confidence_classifier", 0.0)))
+
+    # Output (truth)
+    out = result.get("output") or {}
+    scenario = out.get("scenario", result.get("scenario", "unknown"))
+
+    repaired_text = out.get("repaired_text", result.get("repaired_text"))
+    repair_note = out.get("repair_note", result.get("repair_note"))
+
+    # Ensure BLOCK stays explicit (""), not None
+    if repaired_text is None and mode == "block":
+        repaired_text = ""
+
+    # Top-level compat truth (do not guess; only type-normalize)
+    llm_used = _bool_or_none(result.get("llm_used", None))
+    cache_hit = _bool_or_none(result.get("cache_hit", None))
+    model_name = result.get("model", "") or ""
+    usage = result.get("usage", {}) if isinstance(result.get("usage", {}), dict) else {}
+    output_source = result.get("output_source", None)
+
+    # Audit: pass-through pipeline truth, add server_overhead WITHOUT overwriting total
+    audit_top = result.get("audit") if isinstance(result.get("audit"), dict) else {}
+    audit = dict(audit_top)
+
+    if not isinstance(audit.get("timing_ms"), dict):
+        audit["timing_ms"] = {}
+
+    server_overhead = int((time.time() - t0) * 1000)
+    audit["timing_ms"]["server_overhead"] = server_overhead
+    audit["server_time_utc"] = _utc_now()
+
+    # Metrics: pipeline truth
+    metrics = result.get("metrics") if isinstance(result.get("metrics"), dict) else {}
+    metrics = dict(metrics)
+    decision_state = _decision_state_from_truth(
+        mode=mode,
+        freq_type=freq_type,
+        scenario=scenario,
+    )
+    upstream_state = _safe_str(metrics.get("decision_state"), "").strip().upper()
+    if upstream_state in ALLOWED_DECISION_STATES and upstream_state != decision_state:
+        logger.warning(
+            f"decision_state corrected by app truth: upstream={upstream_state}, normalized={decision_state}"
+        )
+    metrics["decision_state"] = decision_state
+    if "action" not in metrics:
+        metrics["action"] = "intercept" if decision_state == "BLOCK" else ("pass" if decision_state == "ALLOW" else "constrain")
+    governance_mode = _governance_mode_from_decision_state(decision_state)
+    intervention_reason_code = _intervention_reason_code_from_truth(
+        decision_state=decision_state,
+        metrics=metrics,
+        audit=audit_top,
+    )
+    risk_category, risk_label = _risk_profile_from_reason(
+        decision_state=decision_state,
+        intervention_reason_code=intervention_reason_code,
+    )
+    metrics["risk_category"] = risk_category
+    metrics["risk_label"] = risk_label
+
+    # Fingerprint (truth)
+    pipeline_fp = (
+        result.get("pipeline_version_fingerprint")
+        or result.get("pipeline_fingerprint")
+        or ""
+    )
+
+    # -------------------- Enterprise-safe log (Schema V1.0, NO CONTENT) --------------------
+    if data_logger:
+        try:
+            evidence = build_evidence_v1(
+                req_text=text,
+                repaired_text=repaired_text,
+                freq_type=freq_type,
+                mode=mode,
+                scenario=scenario,
+                confidence_final=confidence_final,
+                confidence_classifier=confidence_classifier,
+                metrics=metrics,
+                audit_top=audit_top,
+                llm_used=llm_used,
+                cache_hit=cache_hit,
+                model_name=model_name,
+                usage=usage,
+                output_source=output_source,
+                governance_mode=governance_mode,
+                intervention_reason_code=intervention_reason_code,
+                risk_category=risk_category,
+                risk_label=risk_label,
+                pipeline_version_fingerprint=pipeline_fp,
+            )
+
+            meta = {"runtime": {"platform": "hf_space"}}
+
+            # IMPORTANT: do NOT pass raw input into logger
+            log_res = data_logger.log_analysis(
+                input_text=None,
+                output_result=evidence,
+                metadata=meta
+            )
+
+            # attach log_id into audit for feedback/tracing
+            if isinstance(log_res, dict) and log_res.get("timestamp"):
+                audit["log_id"] = log_res["timestamp"]
+
+        except Exception as e:
+            logger.warning(f"Logging skipped: {e}")
+
+    last_decision_state = decision_state
+    last_decision_time = _utc_now()
+    runtime_total_analyses += 1
+    runtime_decision_counts[decision_state] = int(runtime_decision_counts.get(decision_state, 0)) + 1
+    if bool(llm_used):
+        runtime_llm_used_true += 1
+    if freq_type == "OutOfScope" or ("out_of_scope" in _safe_str(scenario, "").lower()) or ("crisis" in _safe_str(scenario, "").lower()):
+        runtime_oos_hits += 1
+    runtime_latency_ms.append(max(0, server_overhead))
+
+    return AnalyzeResponse(
+        decision_state=decision_state,
+        governance_mode=governance_mode,
+        intervention_reason_code=intervention_reason_code,
+        risk_category=risk_category,
+        risk_label=risk_label,
+        freq_type=freq_type,
+        confidence_final=confidence_final,
+        confidence_classifier=confidence_classifier,
+        scenario=scenario,
+        repaired_text=repaired_text,
+        repair_note=repair_note,
+        privacy_guard_ok=PRIVACY_GUARD_OK,
+
+        llm_used=llm_used,
+        cache_hit=cache_hit,
+        model=model_name,
+        usage=usage,
+        output_source=output_source,
+
+        audit=audit,
+        metrics=metrics,
+    )
 
 
 # -------------------- Endpoints --------------------
@@ -771,6 +1098,10 @@ async def health():
         "logger_ready": data_logger is not None,
         "github_backup_enabled": github_backup is not None,
         "risk_taxonomy_version": RISK_TAXONOMY_VERSION,
+        "dual_orchestrator_ready": DUAL_ORCHESTRATOR is not None,
+        "dual_orchestrator_import_error": DUAL_ORCHESTRATOR_IMPORT_ERROR,
+        "dual_policy_version": DUAL_POLICY_VERSION,
+        "fallback_messages_version": FALLBACK_MESSAGES_VERSION,
         "time": _utc_now(),
         "version": APP_VERSION,
     }
@@ -908,180 +1239,58 @@ async def export_usage_summary(month: Optional[str] = None):
 
 @app.post("/api/v1/analyze", response_model=AnalyzeResponse)
 async def analyze(req: AnalyzeRequest):
-    global last_decision_state, last_decision_time
-    global runtime_total_analyses, runtime_llm_used_true, runtime_oos_hits
+    return await _analyze_single_text(req.text, req.source)
 
-    st = _refresh_license_status()
-    if service_halted_by_license:
-        raise HTTPException(503, f"service_halted_by_license:{st.get('reason', 'unknown')}")
-    if not st.get("valid", False):
-        logger.warning(f"License invalid but continuing in degrade mode: {st.get('reason', 'unknown')}")
 
-    if not pipeline:
-        detail = "Pipeline not ready"
-        if PIPELINE_IMPORT_ERROR:
-            detail = f"pipeline_import_failed:{PIPELINE_IMPORT_ERROR}"
+@app.post("/api/v1/analyze_dual", response_model=AnalyzeDualResponse)
+async def analyze_dual(req: AnalyzeDualRequest):
+    if DUAL_ORCHESTRATOR is None:
+        detail = "dual_orchestrator_not_ready"
+        if DUAL_ORCHESTRATOR_IMPORT_ERROR:
+            detail = f"{detail}:{DUAL_ORCHESTRATOR_IMPORT_ERROR}"
         raise HTTPException(503, detail)
 
-    t0 = time.time()
-    source_norm = _safe_str(req.source, "").strip().lower()
-    result = _run_pipeline_with_source(pipeline, req.text, source_norm)
+    user_analysis = await _analyze_single_text(req.user_text, "user")
+    ai_draft_norm = _safe_str(req.ai_draft, "").strip()
+    ai_analysis: Optional[AnalyzeResponse] = None
+    if ai_draft_norm:
+        ai_analysis = await _analyze_single_text(ai_draft_norm, "ai_draft")
 
-    if result.get("error"):
-        if data_logger and hasattr(data_logger, "log_error_event"):
-            try:
-                data_logger.log_error_event(_safe_str(result.get("reason"), "pipeline_error"))
-            except Exception as log_exc:
-                logger.warning(f"error_event_log_failed:{log_exc}")
-        raise HTTPException(400, result.get("reason", "pipeline_error"))
-
-    # -------------------- Core truth --------------------
-    freq_type = result.get("freq_type", "Unknown")
-    mode = (result.get("mode") or "no-op").lower()
-
-    # Confidence (truth)
-    conf_obj = result.get("confidence") or {}
-    confidence_final = _safe_conf(conf_obj.get("final", result.get("confidence_final", 0.0)))
-    confidence_classifier = _safe_conf(conf_obj.get("classifier", result.get("confidence_classifier", 0.0)))
-
-    # Output (truth)
-    out = result.get("output") or {}
-    scenario = out.get("scenario", result.get("scenario", "unknown"))
-
-    repaired_text = out.get("repaired_text", result.get("repaired_text"))
-    repair_note = out.get("repair_note", result.get("repair_note"))
-
-    # Ensure BLOCK stays explicit (""), not None
-    if repaired_text is None and mode == "block":
-        repaired_text = ""
-
-    # Top-level compat truth (do not guess; only type-normalize)
-    llm_used = _bool_or_none(result.get("llm_used", None))
-    cache_hit = _bool_or_none(result.get("cache_hit", None))
-    model_name = result.get("model", "") or ""
-    usage = result.get("usage", {}) if isinstance(result.get("usage", {}), dict) else {}
-    output_source = result.get("output_source", None)
-
-    # Audit: pass-through pipeline truth, add server_overhead WITHOUT overwriting total
-    audit_top = result.get("audit") if isinstance(result.get("audit"), dict) else {}
-    audit = dict(audit_top)
-
-    if not isinstance(audit.get("timing_ms"), dict):
-        audit["timing_ms"] = {}
-
-    server_overhead = int((time.time() - t0) * 1000)
-    audit["timing_ms"]["server_overhead"] = server_overhead
-    audit["server_time_utc"] = _utc_now()
-
-    # Metrics: pipeline truth
-    metrics = result.get("metrics") if isinstance(result.get("metrics"), dict) else {}
-    metrics = dict(metrics)
-    decision_state = _decision_state_from_truth(
-        mode=mode,
-        freq_type=freq_type,
-        scenario=scenario,
-    )
-    upstream_state = _safe_str(metrics.get("decision_state"), "").strip().upper()
-    if upstream_state in ALLOWED_DECISION_STATES and upstream_state != decision_state:
-        logger.warning(
-            f"decision_state corrected by app truth: upstream={upstream_state}, normalized={decision_state}"
-        )
-    metrics["decision_state"] = decision_state
-    if "action" not in metrics:
-        metrics["action"] = "intercept" if decision_state == "BLOCK" else ("pass" if decision_state == "ALLOW" else "constrain")
-    governance_mode = _governance_mode_from_decision_state(decision_state)
-    intervention_reason_code = _intervention_reason_code_from_truth(
-        decision_state=decision_state,
-        metrics=metrics,
-        audit=audit_top,
-    )
-    risk_category, risk_label = _risk_profile_from_reason(
-        decision_state=decision_state,
-        intervention_reason_code=intervention_reason_code,
-    )
-    metrics["risk_category"] = risk_category
-    metrics["risk_label"] = risk_label
-
-    # Fingerprint (truth)
-    pipeline_fp = (
-        result.get("pipeline_version_fingerprint")
-        or result.get("pipeline_fingerprint")
-        or ""
+    user_payload = _model_to_dict(user_analysis)
+    ai_payload = _model_to_dict(ai_analysis) if ai_analysis is not None else None
+    orchestration = DUAL_ORCHESTRATOR.orchestrate(
+        user_result=user_payload,
+        ai_result=ai_payload,
+        ai_draft=ai_draft_norm if ai_draft_norm else None,
+        locale=req.locale,
+        session_id=req.session_id,
+        a_only_policy=req.a_only_policy,
+        timestamp_utc=_utc_now(),
     )
 
-    # -------------------- Enterprise-safe log (Schema V1.0, NO CONTENT) --------------------
-    if data_logger:
-        try:
-            evidence = build_evidence_v1(
-                req_text=req.text,
-                repaired_text=repaired_text,
-                freq_type=freq_type,
-                mode=mode,
-                scenario=scenario,
-                confidence_final=confidence_final,
-                confidence_classifier=confidence_classifier,
-                metrics=metrics,
-                audit_top=audit_top,
-                llm_used=llm_used,
-                cache_hit=cache_hit,
-                model_name=model_name,
-                usage=usage,
-                output_source=output_source,
-                governance_mode=governance_mode,
-                intervention_reason_code=intervention_reason_code,
-                risk_category=risk_category,
-                risk_label=risk_label,
-                pipeline_version_fingerprint=pipeline_fp,
-            )
-
-            meta = {"runtime": {"platform": "hf_space"}}
-
-            # IMPORTANT: do NOT pass raw input into logger
-            log_res = data_logger.log_analysis(
-                input_text=None,
-                output_result=evidence,
-                metadata=meta
-            )
-
-            # attach log_id into audit for feedback/tracing
-            if isinstance(log_res, dict) and log_res.get("timestamp"):
-                audit["log_id"] = log_res["timestamp"]
-
-        except Exception as e:
-            logger.warning(f"Logging skipped: {e}")
-
-    last_decision_state = decision_state
-    last_decision_time = _utc_now()
-    runtime_total_analyses += 1
-    runtime_decision_counts[decision_state] = int(runtime_decision_counts.get(decision_state, 0)) + 1
-    if bool(llm_used):
-        runtime_llm_used_true += 1
-    if freq_type == "OutOfScope" or ("out_of_scope" in _safe_str(scenario, "").lower()) or ("crisis" in _safe_str(scenario, "").lower()):
-        runtime_oos_hits += 1
-    runtime_latency_ms.append(max(0, server_overhead))
-
-    return AnalyzeResponse(
-        decision_state=decision_state,
-        governance_mode=governance_mode,
-        intervention_reason_code=intervention_reason_code,
-        risk_category=risk_category,
-        risk_label=risk_label,
-        freq_type=freq_type,
-        confidence_final=confidence_final,
-        confidence_classifier=confidence_classifier,
-        scenario=scenario,
-        repaired_text=repaired_text,
-        repair_note=repair_note,
-        privacy_guard_ok=PRIVACY_GUARD_OK,
-
-        llm_used=llm_used,
-        cache_hit=cache_hit,
-        model=model_name,
-        usage=usage,
-        output_source=output_source,
-
-        audit=audit,
-        metrics=metrics,
+    return AnalyzeDualResponse(
+        a_only_policy=_safe_str(orchestration.get("a_only_policy"), "balanced"),
+        locale=orchestration.get("locale", "zh"),
+        session_id=_none_if_empty(_safe_str(orchestration.get("session_id"), "")),
+        user_analysis=user_analysis,
+        ai_draft_analysis=ai_analysis,
+        final_source=_safe_str(orchestration.get("final_source"), "user"),
+        final_decision_state=_safe_str(orchestration.get("final_decision_state"), "ALLOW"),
+        final_governance_mode=_safe_str(orchestration.get("final_governance_mode"), "Sense"),
+        final_intervention_reason_code=_none_if_empty(_safe_str(orchestration.get("final_intervention_reason_code"), "")),
+        final_risk_category=_safe_str(orchestration.get("final_risk_category"), "no_intervention"),
+        final_risk_label=_safe_str(orchestration.get("final_risk_label"), "No intervention"),
+        need_ai_draft=_safe_bool(orchestration.get("need_ai_draft"), False),
+        need_ai_draft_message=_none_if_empty(_safe_str(orchestration.get("need_ai_draft_message"), "")),
+        delivery_mode=_safe_str(orchestration.get("delivery_mode"), "direct_pass"),
+        approved_response=_none_if_empty(_safe_str(orchestration.get("approved_response"), "")),
+        assistant_instruction=orchestration.get("assistant_instruction")
+        if isinstance(orchestration.get("assistant_instruction"), dict) else None,
+        draft_reference=_none_if_empty(_safe_str(orchestration.get("draft_reference"), "")),
+        safe_message=_none_if_empty(_safe_str(orchestration.get("safe_message"), "")),
+        handoff_required=_safe_bool(orchestration.get("handoff_required"), False),
+        handoff_event=orchestration.get("handoff_event")
+        if isinstance(orchestration.get("handoff_event"), dict) else None,
     )
 
 

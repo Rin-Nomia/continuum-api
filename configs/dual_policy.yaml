@@ -1,0 +1,42 @@
+version: "v1"
+default_a_only_policy: "balanced"
+
+a_only_policies:
+  balanced:
+    allow:
+      delivery_mode: "direct_pass"
+      need_ai_draft: false
+    guide:
+      delivery_mode: "reference_only"
+      need_ai_draft: true
+    block:
+      delivery_mode: "safe_message"
+      need_ai_draft: false
+
+guide_instruction:
+  objective:
+    zh: "請在不做未授權承諾的前提下，提供可執行且同理的客服回覆。"
+    en: "Provide an empathetic and actionable response without unauthorized commitments."
+  forbidden_commitments:
+    - "unauthorized_refund_commitment"
+    - "unauthorized_discount_commitment"
+    - "unauthorized_compensation_commitment"
+    - "unauthorized_legal_guarantee"
+    - "unauthorized_policy_override"
+    - "unauthorized_contract_change"
+    - "mandatory_human_handoff"
+  must_include_phrases:
+    zh:
+      - "我會協助你依官方流程處理"
+      - "如需進一步處理，我可以為你轉接專員"
+    en:
+      - "I will help you follow the official process."
+      - "If needed, I can connect you with a specialist."
+
+handoff_event:
+  event_type: "trust_layer_handoff_required"
+  event_version: "v1"
+  queue: "customer_support_human"
+  priority_by_decision:
+    BLOCK: "high"
+    GUIDE: "normal"

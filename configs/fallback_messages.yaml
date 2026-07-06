@@ -1,0 +1,9 @@
+version: "v1"
+
+block_safe_message:
+  zh: "請稍候，我為您轉接專員。"
+  en: "Please hold while I connect you with a specialist."
+
+need_ai_draft_message:
+  zh: "請提供 AI 草稿回答，讓系統完成雙路治理整合。"
+  en: "Please provide the AI draft response so the system can complete dual-path governance."

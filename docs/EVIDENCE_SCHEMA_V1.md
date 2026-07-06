@@ -16,6 +16,7 @@ Key additions in A-P0-2/A-P0-3:
 - `governance_mode` (`Sense`/`Guide`/`Block`)
 - `intervention_reason_code` (why the system intervened)
 - `risk_category` / `risk_label` (external-readable high-risk classification)
+- `analyze_dual` orchestration contract (`delivery_mode`, `assistant_instruction`, `handoff_event`)
 
 ---
 
@@ -42,6 +43,30 @@ Key additions in A-P0-2/A-P0-3:
 | output_source | string or null | Output path source | `authority_boundary_check` |
 | audit | object | Content-free audit metadata | `{"input_hash":"...","timing_ms":{"total":1}}` |
 | metrics | object | Governance metrics summary | `{"reason_code":"unauthorized_refund_commitment","decision_state":"GUIDE"}` |
+
+---
+
+## 2.1) Analyze Dual API response fields (`/api/v1/analyze_dual`)
+
+| Field | Type | Description |
+|---|---|---|
+| a_only_policy | string | Current policy (`balanced`) |
+| user_analysis | object | Full `/api/v1/analyze` response for A path (`source=user`) |
+| ai_draft_analysis | object or null | Full `/api/v1/analyze` response for B path (`source=ai_draft`) |
+| final_decision_state | string (`ALLOW`/`GUIDE`/`BLOCK`) | Final decision after A/B integration |
+| final_governance_mode | string (`Sense`/`Guide`/`Block`) | External-readable final mode |
+| final_intervention_reason_code | string or null | Final intervention reason |
+| delivery_mode | string (`direct_pass`/`reference_only`/`safe_message`) | Downstream handling mode |
+| need_ai_draft | boolean | Whether B path draft is required to continue |
+| assistant_instruction | object or null | GUIDE-time instruction for partner AI generation |
+| safe_message | string or null | BLOCK-time safe user-facing message |
+| handoff_required | boolean | Whether human handoff is required |
+| handoff_event | object or null | BLOCK JSON event payload for CRM/ticket integration |
+
+`balanced` A-only behavior:
+- `ALLOW` -> `direct_pass`
+- `GUIDE` -> `reference_only` + `need_ai_draft=true`
+- `BLOCK` -> `safe_message` + `handoff_event`
 
 ---
 

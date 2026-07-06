@@ -184,7 +184,7 @@
   <main class="wrap">
     <section class="card">
       <h1>Trust Layer — 雙輸入治理 Playground</h1>
-      <p class="sub">同時分析「用戶說的話」與「AI 草稿回答」，產出最終整合治理決策。</p>
+      <p class="sub">後端一次完成雙路治理：分析「用戶說的話」與（可選）「AI 草稿回答」，回傳最終整合決策。</p>
     </section>
 
     <section class="card">
@@ -250,8 +250,8 @@
 
   <script>
     const API_CANDIDATES = Array.from(new Set([
-      `${window.location.origin}/api/v1/analyze`,
-      "https://rinnomia-continuum-api.hf.space/api/v1/analyze"
+      `${window.location.origin}/api/v1/analyze_dual`,
+      "https://rinnomia-continuum-api.hf.space/api/v1/analyze_dual"
     ]));
 
     function levelFromDecision(decisionState) {
@@ -319,24 +319,6 @@
       return map[String(reasonCode || "")] || "未識別";
     }
 
-    function rankDecision(result) {
-      const ds = String(result?.decision_state || "ALLOW").toUpperCase();
-      if (ds === "BLOCK") return 3;
-      if (ds === "GUIDE") return 2;
-      return 1;
-    }
-
-    function aggregateDecision(userResult, aiResult) {
-      const ru = rankDecision(userResult);
-      const ra = rankDecision(aiResult);
-      if (ra > ru) return aiResult;
-      if (ru > ra) return userResult;
-      const aiReason = String(aiResult?.intervention_reason_code || "");
-      const userReason = String(userResult?.intervention_reason_code || "");
-      if (aiReason && !userReason) return aiResult;
-      return userResult;
-    }
-
     function setList(id, items) {
       const el = document.getElementById(id);
       el.innerHTML = "";
@@ -385,7 +367,7 @@
       ]);
     }
 
-    async function postAnalyze(payload, timeoutMs = 20000) {
+    async function postAnalyzeDual(payload, timeoutMs = 20000) {
       let lastError = "unknown_error";
       for (const url of API_CANDIDATES) {
         const controller = new AbortController();
@@ -419,39 +401,54 @@
       const btn = document.getElementById("analyzeBtn");
       errorEl.textContent = "";
 
-      if (!userText || !aiDraftText) {
-        errorEl.textContent = "請同時輸入「用戶說的話」與「AI 草稿回答」。";
+      if (!userText) {
+        errorEl.textContent = "請先輸入「用戶說的話」。";
         return;
       }
 
       btn.disabled = true;
       btn.textContent = "分析中...";
       try {
-        const [userResp, aiResp] = await Promise.all([
-          postAnalyze({ text: userText, source: "user" }),
-          postAnalyze({ text: aiDraftText, source: "ai_draft" })
-        ]);
+        const dualResp = await postAnalyzeDual({
+          user_text: userText,
+          ai_draft: aiDraftText || null,
+          locale: "zh",
+          a_only_policy: "balanced"
+        });
 
-        const userResult = userResp.data || {};
-        const aiResult = aiResp.data || {};
-        const finalResult = aggregateDecision(userResult, aiResult);
+        const payload = dualResp.data || {};
+        const userResult = payload.user_analysis || {};
+        const aiResult = payload.ai_draft_analysis || {};
+        const finalResult = {
+          decision_state: payload.final_decision_state || "ALLOW",
+          governance_mode: payload.final_governance_mode || "Sense",
+          intervention_reason_code: payload.final_intervention_reason_code || null
+        };
 
         document.getElementById("userToneType").textContent = toneLabel(userResult);
         document.getElementById("userRiskLevel").textContent = levelFromDecision(userResult.decision_state);
         document.getElementById("userDecision").innerHTML = decisionBadge(userResult.decision_state);
 
         const detected = isCommitmentRisk(aiResult);
-        document.getElementById("aiCommitmentDetected").textContent = detected ? "是" : "否";
-        document.getElementById("aiCommitmentType").textContent = detected
+        const hasAiDraft = !!payload.ai_draft_analysis;
+        document.getElementById("aiCommitmentDetected").textContent = hasAiDraft ? (detected ? "是" : "否") : "未提供";
+        document.getElementById("aiCommitmentType").textContent = hasAiDraft && detected
           ? commitmentType(aiResult.intervention_reason_code)
-          : "無";
-        document.getElementById("aiDecision").innerHTML = decisionBadge(aiResult.decision_state);
+          : (hasAiDraft ? "無" : "未提供");
+        document.getElementById("aiDecision").innerHTML = hasAiDraft
+          ? decisionBadge(aiResult.decision_state)
+          : '<span class="badge">N/A</span>';
 
         document.getElementById("finalDecision").innerHTML = decisionBadge(finalResult.decision_state);
         document.getElementById("finalGovernanceMode").innerHTML = modeBadge(finalResult.governance_mode);
         document.getElementById("finalReasonCode").textContent = finalResult.intervention_reason_code || "null";
 
         renderOutcomeSummary(finalResult);
+        if (payload.need_ai_draft && payload.need_ai_draft_message) {
+          errorEl.textContent = payload.need_ai_draft_message;
+        } else if (payload.delivery_mode === "safe_message" && payload.safe_message) {
+          errorEl.textContent = `BLOCK 安全訊息：${payload.safe_message}`;
+        }
       } catch (err) {
         errorEl.textContent = `分析失敗：${err.message}`;
       } finally {
