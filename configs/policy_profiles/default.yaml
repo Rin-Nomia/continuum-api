@@ -1,0 +1,8 @@
+profile_id: default
+display_name: Default Policy
+description: Default commitment governance profile.
+status: active
+version: 1
+updated_at_utc: "2026-07-07T00:00:00+00:00"
+source_rules_path: configs/commitment_rules.yaml
+overrides: {}

@@ -1,0 +1,13 @@
+profile_id: customer_a
+display_name: Customer A Policy
+description: Customer A uses stricter discount commitment handling.
+status: active
+version: 1
+updated_at_utc: "2026-07-07T00:00:00+00:00"
+source_rules_path: configs/commitment_rules.yaml
+overrides:
+  categories:
+    discount_commitment:
+      enabled: true
+      decision: BLOCK
+      reason_code: unauthorized_discount_commitment

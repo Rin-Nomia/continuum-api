@@ -690,10 +690,48 @@ def _demo_api_urls() -> List[str]:
     return out
 
 
-def _call_demo_analyze(text: str) -> Tuple[bool, Dict[str, Any], str, str]:
+def _policy_profile_manifest_paths() -> List[Path]:
+    out = [
+        APP_DIR / "configs" / "policy_profiles",
+        WORKSPACE_DIR / "continuum-api-repo" / "configs" / "policy_profiles",
+    ]
+    dedup: List[Path] = []
+    seen = set()
+    for p in out:
+        k = str(p)
+        if k in seen:
+            continue
+        dedup.append(p)
+        seen.add(k)
+    return dedup
+
+
+@st.cache_data(show_spinner=False)
+def _available_policy_profiles() -> List[str]:
+    profiles: List[str] = []
+    for d in _policy_profile_manifest_paths():
+        if not d.exists() or not d.is_dir():
+            continue
+        for p in sorted(d.glob("*.yaml")):
+            pid = p.stem
+            try:
+                raw = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
+                if isinstance(raw, dict):
+                    pid = str(raw.get("profile_id", p.stem))
+            except Exception:
+                pid = p.stem
+            if pid and pid not in profiles:
+                profiles.append(pid)
+    if not profiles:
+        profiles = ["default"]
+    return profiles
+
+
+def _call_demo_analyze(text: str, policy_profile: str) -> Tuple[bool, Dict[str, Any], str, str]:
     for url in _demo_api_urls():
         try:
-            resp = requests.post(url, json={"text": text}, timeout=20)
+            payload = {"text": text, "policy_profile": policy_profile}
+            resp = requests.post(url, json=payload, timeout=20)
             if resp.status_code == 200:
                 data = resp.json() if resp.headers.get("content-type", "").startswith("application/json") else {}
                 return True, data if isinstance(data, dict) else {}, url, ""
@@ -707,12 +745,15 @@ def _call_demo_analyze(text: str) -> Tuple[bool, Dict[str, Any], str, str]:
 def _render_demo_playground() -> None:
     st.markdown("## Demo Playground")
     st.caption("輸入單句，立即查看治理結果（原文/判定/修復對比）。")
+    profile_options = _available_policy_profiles()
+    default_idx = profile_options.index("default") if "default" in profile_options else 0
+    selected_profile = st.selectbox("Policy Profile", options=profile_options, index=default_idx)
     text = st.text_area("輸入文字", height=120, placeholder="例如：你可以快一點嗎？")
     if st.button("執行 Demo 分析", use_container_width=True):
         if not text.strip():
             st.warning("請先輸入文字。")
             return
-        ok, data, url, err = _call_demo_analyze(text.strip())
+        ok, data, url, err = _call_demo_analyze(text.strip(), selected_profile)
         if not ok:
             st.error(f"呼叫失敗：{err}")
             st.caption(f"候選 API：{', '.join(_demo_api_urls())}")
@@ -738,6 +779,7 @@ def _render_demo_playground() -> None:
         m2.metric("治理模式", governance_mode)
         m3.metric("風險分類", risk_category)
         m4.metric("信心值", f"{conf_val:.2f}")
+        st.caption(f"Policy Profile：`{data.get('policy_profile', selected_profile)}`")
         st.caption(f"介入原因碼：`{intervention_reason_code_text or 'null'}`")
         st.caption(f"風險標籤：{risk_label}｜語氣類型：{freq_type}")
         st.caption(f"API 來源：`{url}`")

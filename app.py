@@ -32,6 +32,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 import uvicorn
+from policy_profiles import PolicyProfileManager
 
 PIPELINE_IMPORT_ERROR: Optional[str] = None
 try:
@@ -77,6 +78,8 @@ APP_VERSION = os.environ.get("APP_VERSION", "2.2.4-hf").strip() or "2.2.4-hf"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PIPELINE_MIN_INPUT_LENGTH = int(os.environ.get("PIPELINE_MIN_INPUT_LENGTH", "5"))
 PIPELINE_MAX_INPUT_LENGTH = int(os.environ.get("PIPELINE_MAX_INPUT_LENGTH", "500"))
+DEFAULT_POLICY_PROFILE = os.environ.get("DEFAULT_POLICY_PROFILE", "default").strip() or "default"
+POLICY_PROFILE_MANAGER = PolicyProfileManager(repo_dir=BASE_DIR)
 
 # -------------------- Globals --------------------
 pipeline: Optional[Z1Pipeline] = None
@@ -423,7 +426,24 @@ def _decision_state_from_truth(*, mode: str, freq_type: str, scenario: str) -> s
     return _decision_from_mode(mode)
 
 
-def _run_pipeline_with_source(pipeline_obj: "Z1Pipeline", text: str, source: str) -> Dict[str, Any]:
+def _resolve_policy_profile(policy_profile: Optional[str]) -> Dict[str, Any]:
+    requested = _safe_str(policy_profile, "").strip() or DEFAULT_POLICY_PROFILE
+    try:
+        resolved = POLICY_PROFILE_MANAGER.resolve_profile(requested)
+    except Exception:
+        resolved = POLICY_PROFILE_MANAGER.resolve_profile(DEFAULT_POLICY_PROFILE)
+    resolved["profile_id"] = _safe_str(resolved.get("profile_id"), DEFAULT_POLICY_PROFILE)
+    resolved["version"] = _safe_int(resolved.get("version"), 1)
+    resolved["compiled_rules_path"] = _safe_str(resolved.get("compiled_rules_path"), "")
+    return resolved
+
+
+def _run_pipeline_with_source(
+    pipeline_obj: "Z1Pipeline",
+    text: str,
+    source: str,
+    commitment_rules_path: str = "",
+) -> Dict[str, Any]:
     """
     Source-aware pipeline dispatch with backward compatibility:
     - New pipeline: process(text, source=...)
@@ -431,28 +451,53 @@ def _run_pipeline_with_source(pipeline_obj: "Z1Pipeline", text: str, source: str
     """
     src = _safe_str(source, "").strip().lower()
 
-    try:
-        sig = inspect.signature(pipeline_obj.process)
-        if "source" in sig.parameters:
-            return pipeline_obj.process(text, source=src)
-    except Exception:
-        pass
-
-    # Legacy pipeline fallback
-    if src != "user":
-        return pipeline_obj.process(text)
-
-    # source=user -> prioritize user-tone/safety by disabling commitment guard in this call.
     original_cfg = getattr(pipeline_obj, "commitment_cfg", None)
-    if isinstance(original_cfg, dict):
-        try:
-            pipeline_obj.commitment_cfg = dict(original_cfg)
-            pipeline_obj.commitment_cfg["enabled"] = False
-            return pipeline_obj.process(text)
-        finally:
-            pipeline_obj.commitment_cfg = original_cfg
+    original_guard = getattr(pipeline_obj, "commitment_guard", None)
+    has_mutation = False
+    try:
+        # Apply profile-specific rules before processing.
+        if commitment_rules_path:
+            if isinstance(original_cfg, dict):
+                pipeline_obj.commitment_cfg = dict(original_cfg)
+                pipeline_obj.commitment_cfg["rules_path"] = commitment_rules_path
+                pipeline_obj.commitment_cfg["enabled"] = bool(original_cfg.get("enabled", True))
+                has_mutation = True
+            guard_obj = getattr(pipeline_obj, "commitment_guard", None)
+            guard_cls = guard_obj.__class__ if guard_obj is not None else None
+            if guard_cls is not None:
+                try:
+                    guard_rules_path = _safe_str(getattr(guard_obj, "rules_path", ""), "")
+                    if guard_rules_path != commitment_rules_path:
+                        pipeline_obj.commitment_guard = guard_cls(rules_path=commitment_rules_path)
+                        has_mutation = True
+                except Exception:
+                    pass
 
-    return pipeline_obj.process(text)
+        try:
+            sig = inspect.signature(pipeline_obj.process)
+            if "source" in sig.parameters:
+                return pipeline_obj.process(text, source=src)
+        except Exception:
+            pass
+
+        # Legacy pipeline fallback
+        if src != "user":
+            return pipeline_obj.process(text)
+
+        # source=user -> prioritize user-tone/safety by disabling commitment guard in this call.
+        if isinstance(getattr(pipeline_obj, "commitment_cfg", None), dict):
+            pipeline_obj.commitment_cfg = dict(pipeline_obj.commitment_cfg)
+            pipeline_obj.commitment_cfg["enabled"] = False
+            has_mutation = True
+            return pipeline_obj.process(text)
+
+        return pipeline_obj.process(text)
+    finally:
+        if has_mutation:
+            if isinstance(original_cfg, dict):
+                pipeline_obj.commitment_cfg = original_cfg
+            if original_guard is not None:
+                pipeline_obj.commitment_guard = original_guard
 
 
 def _percentile(values: List[int], p: float) -> Optional[float]:
@@ -814,9 +859,12 @@ app.add_middleware(
 class AnalyzeRequest(BaseModel):
     text: str = Field(..., min_length=PIPELINE_MIN_INPUT_LENGTH, max_length=PIPELINE_MAX_INPUT_LENGTH)
     source: Optional[Literal["user", "ai_draft"]] = None
+    policy_profile: Optional[str] = None
 
 
 class AnalyzeResponse(BaseModel):
+    policy_profile: str = "default"
+    policy_profile_version: int = 1
     decision_state: Literal["ALLOW", "GUIDE", "BLOCK"]
     governance_mode: Literal["Sense", "Guide", "Block"]
     intervention_reason_code: Optional[str] = None
@@ -846,10 +894,13 @@ class AnalyzeDualRequest(BaseModel):
     locale: Optional[Literal["zh", "en"]] = None
     session_id: Optional[str] = Field(default=None, min_length=1, max_length=128)
     a_only_policy: Optional[Literal["balanced"]] = "balanced"
+    policy_profile: Optional[str] = None
 
 
 class AnalyzeDualResponse(BaseModel):
     a_only_policy: str
+    policy_profile: str = "default"
+    policy_profile_version: int = 1
     locale: Literal["zh", "en"]
     session_id: Optional[str] = None
     user_analysis: AnalyzeResponse
@@ -888,13 +939,30 @@ class UsageSummaryResponse(BaseModel):
     counts: Dict[str, int]
 
 
+class PolicyRuleUpsertRequest(BaseModel):
+    rule_group: Literal["categories", "additional_patterns"] = "categories"
+    rule_payload: Dict[str, Any]
+
+
+class PolicyRuleDisableRequest(BaseModel):
+    rule_group: Literal["categories", "additional_patterns"] = "categories"
+
+
+class PolicyRollbackRequest(BaseModel):
+    target_version: int = Field(..., ge=1)
+
+
 def _model_to_dict(model_obj: BaseModel) -> Dict[str, Any]:
     if hasattr(model_obj, "model_dump"):
         return model_obj.model_dump()  # pydantic v2
     return model_obj.dict()  # pydantic v1
 
 
-async def _analyze_single_text(text: str, source: Optional[str] = None) -> AnalyzeResponse:
+async def _analyze_single_text(
+    text: str,
+    source: Optional[str] = None,
+    policy_profile: Optional[str] = None,
+) -> AnalyzeResponse:
     global last_decision_state, last_decision_time
     global runtime_total_analyses, runtime_llm_used_true, runtime_oos_hits
 
@@ -910,9 +978,19 @@ async def _analyze_single_text(text: str, source: Optional[str] = None) -> Analy
             detail = f"pipeline_import_failed:{PIPELINE_IMPORT_ERROR}"
         raise HTTPException(503, detail)
 
+    profile_meta = _resolve_policy_profile(policy_profile)
+    policy_profile_id = _safe_str(profile_meta.get("profile_id"), DEFAULT_POLICY_PROFILE)
+    policy_profile_version = _safe_int(profile_meta.get("version"), 1)
+    policy_rules_path = _safe_str(profile_meta.get("compiled_rules_path"), "")
+
     t0 = time.time()
     source_norm = _safe_str(source, "").strip().lower()
-    result = _run_pipeline_with_source(pipeline, text, source_norm)
+    result = _run_pipeline_with_source(
+        pipeline,
+        text,
+        source_norm,
+        commitment_rules_path=policy_rules_path,
+    )
 
     if result.get("error"):
         if data_logger and hasattr(data_logger, "log_error_event"):
@@ -959,6 +1037,11 @@ async def _analyze_single_text(text: str, source: Optional[str] = None) -> Analy
     server_overhead = int((time.time() - t0) * 1000)
     audit["timing_ms"]["server_overhead"] = server_overhead
     audit["server_time_utc"] = _utc_now()
+    audit["policy_profile"] = {
+        "id": policy_profile_id,
+        "version": policy_profile_version,
+        "rules_path": os.path.basename(policy_rules_path) if policy_rules_path else "",
+    }
 
     # Metrics: pipeline truth
     metrics = result.get("metrics") if isinstance(result.get("metrics"), dict) else {}
@@ -988,6 +1071,7 @@ async def _analyze_single_text(text: str, source: Optional[str] = None) -> Analy
     )
     metrics["risk_category"] = risk_category
     metrics["risk_label"] = risk_label
+    metrics["policy_profile"] = policy_profile_id
 
     # Fingerprint (truth)
     pipeline_fp = (
@@ -1048,6 +1132,8 @@ async def _analyze_single_text(text: str, source: Optional[str] = None) -> Analy
     runtime_latency_ms.append(max(0, server_overhead))
 
     return AnalyzeResponse(
+        policy_profile=policy_profile_id,
+        policy_profile_version=policy_profile_version,
         decision_state=decision_state,
         governance_mode=governance_mode,
         intervention_reason_code=intervention_reason_code,
@@ -1102,6 +1188,8 @@ async def health():
         "dual_orchestrator_import_error": DUAL_ORCHESTRATOR_IMPORT_ERROR,
         "dual_policy_version": DUAL_POLICY_VERSION,
         "fallback_messages_version": FALLBACK_MESSAGES_VERSION,
+        "default_policy_profile": DEFAULT_POLICY_PROFILE,
+        "policy_profile_count": len(POLICY_PROFILE_MANAGER.list_profiles()),
         "time": _utc_now(),
         "version": APP_VERSION,
     }
@@ -1237,9 +1325,87 @@ async def export_usage_summary(month: Optional[str] = None):
         raise HTTPException(500, f"usage_summary_failed:{e}")
 
 
+@app.get("/api/v1/policy_profiles")
+async def list_policy_profiles():
+    try:
+        profiles = POLICY_PROFILE_MANAGER.list_profiles()
+        return {
+            "ok": True,
+            "default_policy_profile": DEFAULT_POLICY_PROFILE,
+            "profiles": profiles,
+            "time": _utc_now(),
+        }
+    except Exception as e:
+        raise HTTPException(500, f"list_policy_profiles_failed:{e}")
+
+
+@app.get("/api/v1/policy_profiles/{profile_id}")
+async def get_policy_profile(profile_id: str):
+    try:
+        profile = POLICY_PROFILE_MANAGER.load_profile(profile_id)
+        compiled = POLICY_PROFILE_MANAGER.compile_profile(profile_id)
+        versions = POLICY_PROFILE_MANAGER.list_versions(profile_id)
+        return {
+            "ok": True,
+            "profile": profile,
+            "compiled": compiled,
+            "versions": versions,
+            "time": _utc_now(),
+        }
+    except FileNotFoundError:
+        raise HTTPException(404, "policy_profile_not_found")
+    except Exception as e:
+        raise HTTPException(400, f"get_policy_profile_failed:{e}")
+
+
+@app.post("/api/v1/policy_profiles/{profile_id}/rules/{rule_name}")
+async def upsert_policy_rule(profile_id: str, rule_name: str, req: PolicyRuleUpsertRequest):
+    try:
+        result = POLICY_PROFILE_MANAGER.upsert_rule(
+            profile_id=profile_id,
+            rule_group=req.rule_group,
+            rule_name=rule_name,
+            rule_payload=req.rule_payload,
+        )
+        return {"ok": True, "result": result, "time": _utc_now()}
+    except FileNotFoundError:
+        raise HTTPException(404, "policy_profile_not_found")
+    except Exception as e:
+        raise HTTPException(400, f"upsert_policy_rule_failed:{e}")
+
+
+@app.post("/api/v1/policy_profiles/{profile_id}/rules/{rule_name}/disable")
+async def disable_policy_rule(profile_id: str, rule_name: str, req: PolicyRuleDisableRequest):
+    try:
+        result = POLICY_PROFILE_MANAGER.disable_rule(
+            profile_id=profile_id,
+            rule_group=req.rule_group,
+            rule_name=rule_name,
+        )
+        return {"ok": True, "result": result, "time": _utc_now()}
+    except FileNotFoundError:
+        raise HTTPException(404, "policy_profile_not_found")
+    except Exception as e:
+        raise HTTPException(400, f"disable_policy_rule_failed:{e}")
+
+
+@app.post("/api/v1/policy_profiles/{profile_id}/rollback")
+async def rollback_policy_profile(profile_id: str, req: PolicyRollbackRequest):
+    try:
+        result = POLICY_PROFILE_MANAGER.rollback(
+            profile_id=profile_id,
+            target_version=req.target_version,
+        )
+        return {"ok": True, "result": result, "time": _utc_now()}
+    except FileNotFoundError:
+        raise HTTPException(404, "policy_profile_or_version_not_found")
+    except Exception as e:
+        raise HTTPException(400, f"rollback_policy_profile_failed:{e}")
+
+
 @app.post("/api/v1/analyze", response_model=AnalyzeResponse)
 async def analyze(req: AnalyzeRequest):
-    return await _analyze_single_text(req.text, req.source)
+    return await _analyze_single_text(req.text, req.source, req.policy_profile)
 
 
 @app.post("/api/v1/analyze_dual", response_model=AnalyzeDualResponse)
@@ -1250,11 +1416,11 @@ async def analyze_dual(req: AnalyzeDualRequest):
             detail = f"{detail}:{DUAL_ORCHESTRATOR_IMPORT_ERROR}"
         raise HTTPException(503, detail)
 
-    user_analysis = await _analyze_single_text(req.user_text, "user")
+    user_analysis = await _analyze_single_text(req.user_text, "user", req.policy_profile)
     ai_draft_norm = _safe_str(req.ai_draft, "").strip()
     ai_analysis: Optional[AnalyzeResponse] = None
     if ai_draft_norm:
-        ai_analysis = await _analyze_single_text(ai_draft_norm, "ai_draft")
+        ai_analysis = await _analyze_single_text(ai_draft_norm, "ai_draft", req.policy_profile)
 
     user_payload = _model_to_dict(user_analysis)
     ai_payload = _model_to_dict(ai_analysis) if ai_analysis is not None else None
@@ -1270,6 +1436,8 @@ async def analyze_dual(req: AnalyzeDualRequest):
 
     return AnalyzeDualResponse(
         a_only_policy=_safe_str(orchestration.get("a_only_policy"), "balanced"),
+        policy_profile=_safe_str(user_payload.get("policy_profile"), DEFAULT_POLICY_PROFILE),
+        policy_profile_version=_safe_int(user_payload.get("policy_profile_version"), 1),
         locale=orchestration.get("locale", "zh"),
         session_id=_none_if_empty(_safe_str(orchestration.get("session_id"), "")),
         user_analysis=user_analysis,
