@@ -14,6 +14,7 @@ COPY requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r /app/requirements.txt
 
 COPY app.py /app/app.py
+COPY policy_profiles.py /app/policy_profiles.py
 COPY logger.py /app/logger.py
 COPY status.html /app/status.html
 COPY playground.html /app/playground.html
